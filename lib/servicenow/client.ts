@@ -7,10 +7,12 @@ import {
   DashboardSummary,
   DecisionRequest,
   DecisionResponse,
+  EvidenceItem,
   GroupRef,
   IssueFilters,
   IssueListItem,
   OwnershipIssue,
+  ReviewStatus,
 } from "@/lib/types";
 import {
   computeAnalytics,
@@ -75,7 +77,89 @@ async function snFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ServiceNowApiError(res.status, message);
   }
 
-  return res.json() as Promise<T>;
+  const json = await res.json();
+  // ServiceNow Scripted REST wraps responses in a { result: ... } envelope
+  return (json && typeof json === "object" && "result" in json
+    ? (json as Record<string, unknown>).result
+    : json) as T;
+}
+
+// ---- Mapping: ServiceNow Ownership API shapes -> app domain types ----
+
+const STATUS_MAP: Record<string, ReviewStatus> = {
+  flagged: "open",
+  in_review: "in_review",
+  resolved: "resolved",
+  deferred: "deferred",
+};
+
+function toReviewStatus(s: string | null | undefined): ReviewStatus {
+  return STATUS_MAP[s ?? ""] ?? "open";
+}
+
+function toEvidenceItems(ev: unknown): EvidenceItem[] {
+  if (!ev || typeof ev !== "object") return [];
+  return Object.entries(ev as Record<string, unknown>).map(([type, value]) => ({
+    type,
+    value: typeof value === "object" ? JSON.stringify(value) : String(value),
+    weight: 0,
+  }));
+}
+
+interface SnListItem {
+  sys_id: string; ci_name: string; ci_class: string; issue_type: string;
+  current_owner: string | null; managed_by: string | null;
+  recommended_owner: string | null; confidence: number | null;
+  ai_rationale: string | null; evidence: unknown;
+}
+interface SnIssueDetail extends SnListItem {
+  ownership_status: string; current_owner_id?: string; recommended_owner_id?: string;
+}
+
+function mapListItem(r: SnListItem): IssueListItem {
+  return {
+    sys_id: r.sys_id,
+    number: r.sys_id.slice(0, 8),
+    ciName: r.ci_name ?? "",
+    ciClass: r.ci_class ?? "",
+    currentOwner: r.current_owner,
+    recommendedOwnerName: r.recommended_owner,
+    aiConfidence: r.confidence ?? 0,
+    reviewStatus: "open",
+    dateIdentified: "",
+    currentSupportGroupName: r.current_owner,
+  };
+}
+
+function mapIssue(r: SnIssueDetail): OwnershipIssue {
+  return {
+    sys_id: r.sys_id,
+    number: r.sys_id.slice(0, 8),
+    childCi: { sys_id: r.sys_id, name: r.ci_name ?? "", ciClass: r.ci_class ?? "" },
+    relationshipType: r.issue_type ?? "",
+    currentOwner: r.current_owner,
+    currentSupportGroup: r.current_owner
+      ? { sys_id: r.current_owner_id ?? "", name: r.current_owner }
+      : null,
+    managedBy: r.managed_by,
+    evidence: toEvidenceItems(r.evidence),
+    aiReason: r.issue_type ?? "",
+    aiRationale: r.ai_rationale ?? "",
+    aiConfidence: r.confidence ?? 0,
+    recommendedOwner: r.recommended_owner
+      ? { sys_id: r.recommended_owner_id ?? "", name: r.recommended_owner }
+      : null,
+    reviewStatus: toReviewStatus(r.ownership_status),
+    decision: null,
+    decisionNotes: null,
+    finalOwner: null,
+    notes: null,
+    dateIdentified: "",
+    created: "",
+    createdBy: "",
+    updated: "",
+    updatedBy: "",
+  };
 }
 
 async function fetchAllFullIssues(): Promise<OwnershipIssue[]> {
@@ -90,15 +174,16 @@ export async function listIssues(filters: IssueFilters): Promise<IssueListItem[]
   const qs = new URLSearchParams(
     Object.entries(filters).filter(([, v]) => Boolean(v)) as [string, string][]
   ).toString();
-  const data = await snFetch<{ items: IssueListItem[] }>(`/issues${qs ? `?${qs}` : ""}`);
-  return data.items;
+  const data = await snFetch<{ items: SnListItem[] }>(`/issues${qs ? `?${qs}` : ""}`);
+  return (data.items ?? []).map(mapListItem);
 }
 
 export async function getIssue(sysId: string): Promise<OwnershipIssue | null> {
   if (!isLiveConfigured()) return mock.getIssue(sysId);
 
   try {
-    return await snFetch<OwnershipIssue>(`/issues/${sysId}`);
+    const data = await snFetch<{ record: SnIssueDetail }>(`/issues/${sysId}`);
+    return mapIssue(data.record);
   } catch (err) {
     if (err instanceof ServiceNowApiError && err.status === 404) return null;
     throw err;
