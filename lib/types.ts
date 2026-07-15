@@ -89,6 +89,25 @@ export interface AnalyticsData {
   resolutionTrend: { date: string; resolved: number }[];
 }
 
+export interface CiClassHealth {
+  ciClass: string;
+  total: number;
+  unowned: number;
+  resolved: number;
+}
+
+export interface CmdbHealthMetrics {
+  totalFlagged: number;
+  unowned: number;
+  ownershipCoveragePct: number;
+  resolutionRatePct: number;
+  openBacklog: number;
+  avgOpenAgeDays: number;
+  oldestOpenAgeDays: number;
+  healthScore: number;
+  byClass: CiClassHealth[];
+}
+
 export type ActivityType =
   | "recommendation_generated"
   | "decision_submitted"

@@ -7,8 +7,17 @@ import { Button } from "@/components/ui/button";
 import { Select, Textarea } from "@/components/ui/input";
 import { ReviewStatusBadge } from "@/components/status-badges";
 import { Decision, GroupRef, OwnershipIssue } from "@/lib/types";
+import type { Role } from "@/lib/auth/types";
 
-export function DecisionPanel({ issue, groups }: { issue: OwnershipIssue; groups: GroupRef[] }) {
+export function DecisionPanel({
+  issue,
+  groups,
+  role,
+}: {
+  issue: OwnershipIssue;
+  groups: GroupRef[];
+  role: Role | null;
+}) {
   const router = useRouter();
   const [notes, setNotes] = useState(issue.decisionNotes ?? "");
   const [overrideGroupId, setOverrideGroupId] = useState(groups[0]?.sys_id ?? "");
@@ -59,6 +68,10 @@ export function DecisionPanel({ issue, groups }: { issue: OwnershipIssue; groups
               <p className="text-zinc-500 dark:text-zinc-400">Notes: {issue.decisionNotes}</p>
             )}
           </div>
+        ) : role !== "steward" ? (
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Viewer access — steward role required to submit a decision.
+          </p>
         ) : (
           <>
             <div>

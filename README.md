@@ -40,6 +40,27 @@ The Ownership API doesn't expose dedicated dashboard/analytics/activity
 endpoints, so those views are computed in `lib/servicenow/derive.ts` from the
 issue list on every request.
 
+## Auth
+
+Demo-tier auth per planning.md's "Simple API Key Authentication": set
+`STEWARD_API_KEY`, `VIEWER_API_KEY`, and `SESSION_SECRET` in `.env.local`
+(defaults are already filled in for local dev — change them before sharing
+the app). Signing in with either key exchanges it for a signed, httpOnly
+session cookie; `proxy.ts` gates every route behind having a valid session,
+redirecting unauthenticated page requests to `/login` and returning `401` for
+unauthenticated API calls.
+
+Two roles, matching the Authorization Model in planning.md:
+
+- **Steward** — full access, can accept/override/defer recommendations.
+- **Viewer** — read-only; the decision UI is hidden and
+  `PATCH /api/issues/{id}/decision` returns `403` even if called directly.
+
+Swapping to Microsoft Entra ID for production only means replacing
+`lib/auth/session.ts` + the `/login`/`/api/auth/*` routes — everything else
+(`proxy.ts`, the role checks in route handlers and components) keys off the
+same `Role` type and doesn't change.
+
 ## Structure
 
 ```
@@ -54,12 +75,13 @@ lib/
   servicenow/client.ts        Live vs. mock ServiceNow integration layer
   servicenow/mock-store.ts    Seed data + in-memory mutation for local demos
   servicenow/derive.ts        Dashboard/analytics/activity aggregation
+  auth/session.ts             Demo-tier session signing/verification + roles
 components/                   UI (Tailwind, hand-rolled shadcn-style primitives)
+proxy.ts                       Route gate: requires a valid session cookie
 ```
 
 ## Notes
 
-- Auth (API key for demo, Microsoft Entra ID for production) described in
-  planning.md is not wired up yet — add it before exposing this beyond local
-  use.
 - The mock store resets whenever the dev server restarts.
+- Auth is demo-tier only (see above) — replace it with Entra ID/NextAuth
+  before any real production exposure.

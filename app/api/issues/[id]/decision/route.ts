@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { submitDecision } from "@/lib/servicenow/client";
 import { errorResponse, handleRouteError } from "@/lib/api-helpers";
 import { DecisionRequest } from "@/lib/types";
+import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
 
 const VALID_DECISIONS = ["accepted", "overridden", "deferred"];
 
@@ -10,6 +12,13 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get(SESSION_COOKIE)?.value;
+    const role = token ? verifySessionToken(token) : null;
+    if (role !== "steward") {
+      return errorResponse(403, "Steward role required to submit a decision");
+    }
+
     const { id } = await context.params;
     const body = (await request.json()) as Partial<DecisionRequest>;
 

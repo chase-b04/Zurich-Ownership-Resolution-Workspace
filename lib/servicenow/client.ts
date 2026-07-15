@@ -3,6 +3,7 @@ import "server-only";
 import {
   ActivityEntry,
   AnalyticsData,
+  CmdbHealthMetrics,
   DashboardSummary,
   DecisionRequest,
   DecisionResponse,
@@ -11,7 +12,12 @@ import {
   IssueListItem,
   OwnershipIssue,
 } from "@/lib/types";
-import { computeAnalytics, computeDashboardSummary, deriveActivityFromIssues } from "./derive";
+import {
+  computeAnalytics,
+  computeDashboardSummary,
+  computeHealthMetrics,
+  deriveActivityFromIssues,
+} from "./derive";
 import * as mock from "./mock-store";
 
 // Server-only integration layer. When SERVICENOW_URL/USERNAME/PASSWORD are
@@ -133,6 +139,11 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
 export async function getAnalytics(): Promise<AnalyticsData> {
   const issues = isLiveConfigured() ? await fetchAllFullIssues() : mock.getAllIssues();
   return computeAnalytics(issues);
+}
+
+export async function getHealthMetrics(): Promise<CmdbHealthMetrics> {
+  const issues = isLiveConfigured() ? await fetchAllFullIssues() : mock.getAllIssues();
+  return computeHealthMetrics(issues);
 }
 
 export async function listActivity(): Promise<ActivityEntry[]> {

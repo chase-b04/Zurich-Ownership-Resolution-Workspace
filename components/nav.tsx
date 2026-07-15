@@ -1,17 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import type { Role } from "@/lib/auth/types";
 
 const LINKS = [
   { href: "/", label: "Dashboard" },
+  { href: "/health", label: "Health" },
   { href: "/analytics", label: "Analytics" },
   { href: "/activity", label: "Activity" },
 ];
 
-export function Nav() {
+export function Nav({ role }: { role: Role | null }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function signOut() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
@@ -38,6 +49,22 @@ export function Nav() {
             );
           })}
         </nav>
+        <div className="ml-auto flex items-center gap-3">
+          {role ? (
+            <>
+              <Badge tone={role === "steward" ? "green" : "neutral"}>
+                {role === "steward" ? "Steward" : "Viewer"}
+              </Badge>
+              <Button variant="ghost" onClick={signOut}>
+                Sign out
+              </Button>
+            </>
+          ) : (
+            <Link href="/login" className="text-sm text-zinc-500 hover:underline">
+              Sign in
+            </Link>
+          )}
+        </div>
       </div>
     </header>
   );

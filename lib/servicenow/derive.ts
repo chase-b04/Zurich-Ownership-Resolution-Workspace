@@ -1,6 +1,8 @@
 import {
   ActivityEntry,
   AnalyticsData,
+  CiClassHealth,
+  CmdbHealthMetrics,
   ConfidenceLevel,
   DashboardSummary,
   OwnershipIssue,
@@ -69,6 +71,57 @@ export function computeAnalytics(issues: OwnershipIssue[]): AnalyticsData {
     resolutionTrend: Array.from(trendMap.entries())
       .map(([date, resolved]) => ({ date, resolved }))
       .sort((a, b) => a.date.localeCompare(b.date)),
+  };
+}
+
+// The Ownership API only surfaces CIs already flagged as ownership
+// problems -- there's no endpoint for total CMDB inventory. So "coverage"
+// here means "share of the flagged backlog with a support group assigned,"
+// not "share of the entire CMDB with clear ownership." Don't relabel this
+// as full-CMDB coverage without a real total-CI-count source.
+export function computeHealthMetrics(issues: OwnershipIssue[]): CmdbHealthMetrics {
+  const totalFlagged = issues.length;
+  const unowned = issues.filter((i) => !i.currentSupportGroup).length;
+  const resolved = issues.filter((i) => i.reviewStatus === "resolved").length;
+  const openIssues = issues.filter(
+    (i) => i.reviewStatus === "open" || i.reviewStatus === "in_review"
+  );
+
+  const now = Date.now();
+  const ageInDays = (i: OwnershipIssue) =>
+    (now - new Date(i.dateIdentified).getTime()) / 86_400_000;
+  const openAges = openIssues.map(ageInDays);
+
+  const ownershipCoveragePct = totalFlagged
+    ? Math.round(((totalFlagged - unowned) / totalFlagged) * 100)
+    : 100;
+  const resolutionRatePct = totalFlagged ? Math.round((resolved / totalFlagged) * 100) : 100;
+  const avgOpenAgeDays = openAges.length
+    ? Math.round(openAges.reduce((a, b) => a + b, 0) / openAges.length)
+    : 0;
+  const oldestOpenAgeDays = openAges.length ? Math.round(Math.max(...openAges)) : 0;
+  const healthScore = Math.round(ownershipCoveragePct * 0.5 + resolutionRatePct * 0.5);
+
+  const byClassMap = new Map<string, CiClassHealth>();
+  for (const issue of issues) {
+    const key = issue.childCi.ciClass;
+    const entry = byClassMap.get(key) ?? { ciClass: key, total: 0, unowned: 0, resolved: 0 };
+    entry.total += 1;
+    if (!issue.currentSupportGroup) entry.unowned += 1;
+    if (issue.reviewStatus === "resolved") entry.resolved += 1;
+    byClassMap.set(key, entry);
+  }
+
+  return {
+    totalFlagged,
+    unowned,
+    ownershipCoveragePct,
+    resolutionRatePct,
+    openBacklog: openIssues.length,
+    avgOpenAgeDays,
+    oldestOpenAgeDays,
+    healthScore,
+    byClass: Array.from(byClassMap.values()).sort((a, b) => b.total - a.total),
   };
 }
 

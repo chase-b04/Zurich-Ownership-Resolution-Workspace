@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { getIssue, listGroups } from "@/lib/servicenow/client";
+import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ConfidenceBadge, ReviewStatusBadge } from "@/components/status-badges";
 import { DecisionPanel } from "@/components/issue/decision-panel";
@@ -22,7 +24,13 @@ export default async function IssuePage({
   params: Promise<{ sys_id: string }>;
 }) {
   const { sys_id } = await params;
-  const [issue, groups] = await Promise.all([getIssue(sys_id), listGroups()]);
+  const [issue, groups, cookieStore] = await Promise.all([
+    getIssue(sys_id),
+    listGroups(),
+    cookies(),
+  ]);
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  const role = token ? verifySessionToken(token) : null;
 
   if (!issue) notFound();
 
@@ -123,7 +131,7 @@ export default async function IssuePage({
         </CardContent>
       </Card>
 
-      <DecisionPanel issue={issue} groups={groups} />
+      <DecisionPanel issue={issue} groups={groups} role={role} />
     </div>
   );
 }
