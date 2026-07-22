@@ -11,6 +11,21 @@ export type Decision = "accepted" | "overridden" | "deferred";
 
 export type ConfidenceLevel = "high" | "medium" | "low";
 
+export type IssueCategory = "ownership" | "relationship";
+
+export type SeverityBand = "Critical" | "High" | "Medium" | "Low";
+
+export type GuardrailStatus = "pass" | "warn" | "fail";
+
+export type RecommendationSource = "ai" | "deterministic_fallback";
+
+export interface GuardrailResult {
+  key: string;
+  label: string;
+  status: GuardrailStatus;
+  detail: string;
+}
+
 export interface GroupRef {
   sys_id: string;
   name: string;
@@ -34,11 +49,19 @@ export interface OwnershipIssue {
   currentOwner: string | null;
   currentSupportGroup: GroupRef | null;
   managedBy: string | null;
+  issueCategory: IssueCategory;
+  issueType: string;
+  severityScore: number;
+  severityBand: SeverityBand;
+  environment: string;
+  teamIdentifier: string | null;
   evidence: EvidenceItem[];
   aiReason: string;
   aiRationale: string;
   aiConfidence: number;
   recommendedOwner: GroupRef | null;
+  recommendationSource: RecommendationSource;
+  guardrailResults: GuardrailResult[];
   reviewStatus: ReviewStatus;
   decision: Decision | null;
   decisionNotes: string | null;
@@ -56,12 +79,18 @@ export interface IssueListItem {
   number: string;
   ciName: string;
   ciClass: string;
+  issueCategory: IssueCategory;
+  issueType: string;
+  severityScore: number;
+  severityBand: SeverityBand;
+  environment: string;
   currentOwner: string | null;
   recommendedOwnerName: string | null;
   aiConfidence: number;
   reviewStatus: ReviewStatus;
   dateIdentified: string;
   currentSupportGroupName: string | null;
+  guardrailStatus: GuardrailStatus;
 }
 
 export interface IssueFilters {

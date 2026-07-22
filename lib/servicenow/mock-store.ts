@@ -9,6 +9,14 @@ import {
   OwnershipIssue,
   confidenceLevel,
 } from "@/lib/types";
+import {
+  categoryForIssueType,
+  deriveGuardrails,
+  guardrailRollup,
+  inferIssueType,
+  severityBandFromScore,
+  severityForIssueType,
+} from "@/lib/risk";
 
 // In-memory sample dataset standing in for the ServiceNow CMDB Ownership
 // table while SERVICENOW_URL is not configured. Resets whenever the dev
@@ -47,6 +55,13 @@ function daysAgo(n: number): string {
   const d = new Date("2026-07-14T09:00:00Z");
   d.setUTCDate(d.getUTCDate() - n);
   return d.toISOString();
+}
+
+function environmentForCi(ciName: string, ciClass: string): string {
+  if (ciName.includes("prod") || ciClass === "Database" || ciClass === "Network") {
+    return "Production";
+  }
+  return ciClass === "Application" ? "Staging" : "Development";
 }
 
 interface SeedIssue {
@@ -411,6 +426,16 @@ const SEED: SeedIssue[] = [
 ];
 
 function toOwnershipIssue(seed: SeedIssue): OwnershipIssue {
+  const issueType = inferIssueType(seed.aiReason, seed.aiRationale, seed.currentOwner ? "" : "unowned");
+  const severityScore = severityForIssueType(issueType);
+  const teamIdentifier = "ZURICH";
+  const guardrailResults = deriveGuardrails({
+    confidence: seed.aiConfidence,
+    rationale: seed.aiRationale,
+    evidence: seed.evidence,
+    recommendedOwner: seed.recommendedOwner,
+    teamIdentifier,
+  });
   return {
     sys_id: seed.sys_id,
     number: seed.number,
@@ -419,11 +444,19 @@ function toOwnershipIssue(seed: SeedIssue): OwnershipIssue {
     currentOwner: seed.currentOwner,
     currentSupportGroup: seed.currentSupportGroup,
     managedBy: seed.managedBy,
+    issueCategory: categoryForIssueType(issueType),
+    issueType,
+    severityScore,
+    severityBand: severityBandFromScore(severityScore),
+    environment: environmentForCi(seed.ciName, seed.ciClass),
+    teamIdentifier,
     evidence: seed.evidence,
     aiReason: seed.aiReason,
     aiRationale: seed.aiRationale,
     aiConfidence: seed.aiConfidence,
     recommendedOwner: seed.recommendedOwner,
+    recommendationSource: "ai",
+    guardrailResults,
     reviewStatus: seed.reviewStatus,
     decision: seed.decision,
     decisionNotes: seed.decisionNotes,
@@ -537,12 +570,18 @@ function toListItem(issue: OwnershipIssue): IssueListItem {
     number: issue.number,
     ciName: issue.childCi.name,
     ciClass: issue.childCi.ciClass,
+    issueCategory: issue.issueCategory,
+    issueType: issue.issueType,
+    severityScore: issue.severityScore,
+    severityBand: issue.severityBand,
+    environment: issue.environment,
     currentOwner: issue.currentOwner,
     recommendedOwnerName: issue.recommendedOwner?.name ?? null,
     aiConfidence: issue.aiConfidence,
     reviewStatus: issue.reviewStatus,
     dateIdentified: issue.dateIdentified,
     currentSupportGroupName: issue.currentSupportGroup?.name ?? null,
+    guardrailStatus: guardrailRollup(issue.guardrailResults),
   };
 }
 
@@ -597,6 +636,12 @@ export function runDetection(): DetectionRunResult {
       currentOwner: null,
       currentSupportGroup: null,
       managedBy: ci.managedBy,
+      issueCategory: "ownership",
+      issueType: "missing_owner",
+      severityScore: 85,
+      severityBand: "High",
+      environment: environmentForCi(ci.name, ci.ciClass),
+      teamIdentifier: "ZURICH",
       evidence: [
         {
           type: "relationship_owner_majority",
@@ -608,6 +653,20 @@ export function runDetection(): DetectionRunResult {
       aiRationale: `${recommendedOwnerName} owns the majority of directly related CIs. Human approval is still required before any CMDB update.`,
       aiConfidence: 82,
       recommendedOwner,
+      recommendationSource: "ai",
+      guardrailResults: deriveGuardrails({
+        confidence: 82,
+        rationale: `${recommendedOwnerName} owns the majority of directly related CIs. Human approval is still required before any CMDB update.`,
+        evidence: [
+          {
+            type: "relationship_owner_majority",
+            value: `${supportingRelationships} of ${ci.relatedOwnerSignals.length} related CIs are owned by ${recommendedOwnerName}`,
+            weight: 60,
+          },
+        ],
+        recommendedOwner,
+        teamIdentifier: "ZURICH",
+      }),
       reviewStatus: "open",
       decision: null,
       decisionNotes: null,

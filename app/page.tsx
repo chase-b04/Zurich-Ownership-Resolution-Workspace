@@ -12,7 +12,7 @@ export default async function DashboardPage() {
       <div>
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Dashboard</h1>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Visibility into ownership issues across the CMDB.
+          Prioritize CMDB remediation by operational risk, then review the evidence and safeguards.
         </p>
       </div>
       <DashboardClient canRunDetection={role === "steward"} />

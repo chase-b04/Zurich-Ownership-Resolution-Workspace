@@ -10,11 +10,24 @@ import {
   DetectionRunResult,
   EvidenceItem,
   GroupRef,
+  GuardrailResult,
+  GuardrailStatus,
+  IssueCategory,
   IssueFilters,
   IssueListItem,
   OwnershipIssue,
   ReviewStatus,
+  SeverityBand,
 } from "@/lib/types";
+import {
+  categoryForIssueType,
+  deriveGuardrails,
+  guardrailRollup,
+  inferIssueType,
+  normalizeRecommendationSource,
+  severityBandFromScore,
+  severityForIssueType,
+} from "@/lib/risk";
 import {
   computeAnalytics,
   computeDashboardSummary,
@@ -112,30 +125,108 @@ interface SnListItem {
   current_owner: string | null; managed_by: string | null;
   recommended_owner: string | null; confidence: number | null;
   ai_rationale: string | null; evidence: unknown;
+  number?: string; ownership_status?: string; date_identified?: string;
+  current_owner_id?: string; recommended_owner_id?: string;
+  issue_category?: IssueCategory; severity_score?: number; severity_band?: SeverityBand;
+  environment?: string; team_identifier?: string; recommendation_source?: string;
+  guardrail_results?: unknown;
 }
 interface SnIssueDetail extends SnListItem {
-  ownership_status: string; current_owner_id?: string; recommended_owner_id?: string;
+  ownership_status: string; created?: string; created_by?: string; updated?: string;
+  updated_by?: string; decision?: OwnershipIssue["decision"]; decision_notes?: string;
+  final_owner?: string; final_owner_id?: string;
+}
+
+function parseGuardrailResults(value: unknown): GuardrailResult[] {
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed.flatMap((item, index) => {
+    if (!item || typeof item !== "object") return [];
+    const record = item as Record<string, unknown>;
+    const rawStatus = String(record.status ?? "warn").toLowerCase();
+    const status: GuardrailStatus =
+      rawStatus === "pass" || rawStatus === "fail" ? rawStatus : "warn";
+    return [{
+      key: String(record.key ?? `check_${index + 1}`),
+      label: String(record.label ?? record.name ?? `Guardrail ${index + 1}`),
+      status,
+      detail: String(record.detail ?? record.message ?? "No detail supplied."),
+    }];
+  });
+}
+
+function riskFields(r: SnListItem, evidence: EvidenceItem[], recommendedOwner: GroupRef | null) {
+  const issueType = r.issue_type || inferIssueType(r.ai_rationale, r.current_owner);
+  const severityScore = Number.isFinite(Number(r.severity_score))
+    ? Number(r.severity_score)
+    : severityForIssueType(issueType);
+  const teamIdentifier = r.team_identifier || null;
+  const storedGuardrails = parseGuardrailResults(r.guardrail_results);
+  const guardrailResults = storedGuardrails.length
+    ? storedGuardrails
+    : deriveGuardrails({
+        confidence: Number(r.confidence ?? 0),
+        rationale: r.ai_rationale ?? "",
+        evidence,
+        recommendedOwner,
+        teamIdentifier,
+      });
+
+  return {
+    issueCategory: r.issue_category ?? categoryForIssueType(issueType),
+    issueType,
+    severityScore,
+    severityBand: r.severity_band ?? severityBandFromScore(severityScore),
+    environment: r.environment || "Not specified",
+    teamIdentifier,
+    recommendationSource: normalizeRecommendationSource(r.recommendation_source),
+    guardrailResults,
+  };
 }
 
 function mapListItem(r: SnListItem): IssueListItem {
+  const evidence = toEvidenceItems(r.evidence);
+  const recommendedOwner = r.recommended_owner
+    ? { sys_id: r.recommended_owner_id ?? "", name: r.recommended_owner }
+    : null;
+  const risk = riskFields(r, evidence, recommendedOwner);
   return {
     sys_id: r.sys_id,
-    number: r.sys_id.slice(0, 8),
+    number: r.number || r.sys_id.slice(0, 8),
     ciName: r.ci_name ?? "",
     ciClass: r.ci_class ?? "",
+    issueCategory: risk.issueCategory,
+    issueType: risk.issueType,
+    severityScore: risk.severityScore,
+    severityBand: risk.severityBand,
+    environment: risk.environment,
     currentOwner: r.current_owner,
     recommendedOwnerName: r.recommended_owner,
     aiConfidence: r.confidence ?? 0,
-    reviewStatus: "open",
-    dateIdentified: "",
+    reviewStatus: toReviewStatus(r.ownership_status),
+    dateIdentified: r.date_identified ?? "",
     currentSupportGroupName: r.current_owner,
+    guardrailStatus: guardrailRollup(risk.guardrailResults),
   };
 }
 
 function mapIssue(r: SnIssueDetail): OwnershipIssue {
+  const evidence = toEvidenceItems(r.evidence);
+  const recommendedOwner = r.recommended_owner
+    ? { sys_id: r.recommended_owner_id ?? "", name: r.recommended_owner }
+    : null;
+  const risk = riskFields(r, evidence, recommendedOwner);
   return {
     sys_id: r.sys_id,
-    number: r.sys_id.slice(0, 8),
+    number: r.number || r.sys_id.slice(0, 8),
     childCi: { sys_id: r.sys_id, name: r.ci_name ?? "", ciClass: r.ci_class ?? "" },
     relationshipType: r.issue_type ?? "",
     currentOwner: r.current_owner,
@@ -143,23 +234,31 @@ function mapIssue(r: SnIssueDetail): OwnershipIssue {
       ? { sys_id: r.current_owner_id ?? "", name: r.current_owner }
       : null,
     managedBy: r.managed_by,
-    evidence: toEvidenceItems(r.evidence),
+    issueCategory: risk.issueCategory,
+    issueType: risk.issueType,
+    severityScore: risk.severityScore,
+    severityBand: risk.severityBand,
+    environment: risk.environment,
+    teamIdentifier: risk.teamIdentifier,
+    evidence,
     aiReason: r.issue_type ?? "",
     aiRationale: r.ai_rationale ?? "",
     aiConfidence: r.confidence ?? 0,
-    recommendedOwner: r.recommended_owner
-      ? { sys_id: r.recommended_owner_id ?? "", name: r.recommended_owner }
-      : null,
+    recommendedOwner,
+    recommendationSource: risk.recommendationSource,
+    guardrailResults: risk.guardrailResults,
     reviewStatus: toReviewStatus(r.ownership_status),
-    decision: null,
-    decisionNotes: null,
-    finalOwner: null,
+    decision: r.decision ?? null,
+    decisionNotes: r.decision_notes ?? null,
+    finalOwner: r.final_owner
+      ? { sys_id: r.final_owner_id ?? "", name: r.final_owner }
+      : null,
     notes: null,
-    dateIdentified: "",
-    created: "",
-    createdBy: "",
-    updated: "",
-    updatedBy: "",
+    dateIdentified: r.date_identified ?? "",
+    created: r.created ?? "",
+    createdBy: r.created_by ?? "",
+    updated: r.updated ?? "",
+    updatedBy: r.updated_by ?? "",
   };
 }
 

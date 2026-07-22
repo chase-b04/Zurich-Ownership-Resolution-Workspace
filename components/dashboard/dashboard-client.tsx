@@ -2,31 +2,35 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { StatTile } from "@/components/stat-tile";
-import { ConfidenceBadge, ReviewStatusBadge } from "@/components/status-badges";
-import { Input, Select } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { ErrorCard } from "@/components/error-card";
+import { Input, Select } from "@/components/ui/input";
+import { StatTile } from "@/components/stat-tile";
+import {
+  ConfidenceBadge,
+  GuardrailBadge,
+  ReviewStatusBadge,
+  SeverityBadge,
+} from "@/components/status-badges";
+import { formatIssueType } from "@/lib/risk";
 import {
   ConfidenceLevel,
-  DashboardSummary,
   DetectionRunResult,
   GroupRef,
+  IssueCategory,
   IssueListItem,
   ReviewStatus,
+  SeverityBand,
 } from "@/lib/types";
 
 const CI_CLASSES = ["Database", "Server", "Application", "Network"];
-
-function useDebouncedValue<T>(value: T, delayMs: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(value), delayMs);
-    return () => clearTimeout(timer);
-  }, [value, delayMs]);
-  return debounced;
-}
+const SEVERITY_ORDER: Record<SeverityBand, number> = {
+  Critical: 4,
+  High: 3,
+  Medium: 2,
+  Low: 1,
+};
 
 async function readJson<T>(res: Response): Promise<T> {
   const body = await res.json().catch(() => null);
@@ -36,8 +40,12 @@ async function readJson<T>(res: Response): Promise<T> {
   return body as T;
 }
 
+function formatDate(value: string): string {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toLocaleDateString() : "Not supplied";
+}
+
 export function DashboardClient({ canRunDetection }: { canRunDetection: boolean }) {
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [issues, setIssues] = useState<IssueListItem[] | null>(null);
   const [groups, setGroups] = useState<GroupRef[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -47,36 +55,23 @@ export function DashboardClient({ canRunDetection }: { canRunDetection: boolean 
 
   const [status, setStatus] = useState<ReviewStatus | "">("");
   const [confidence, setConfidence] = useState<ConfidenceLevel | "">("");
+  const [severity, setSeverity] = useState<SeverityBand | "">("");
+  const [category, setCategory] = useState<IssueCategory | "">("");
   const [ciClass, setCiClass] = useState("");
   const [supportGroup, setSupportGroup] = useState("");
   const [search, setSearch] = useState("");
-  const debouncedSearch = useDebouncedValue(search, 300);
 
   useEffect(() => {
-    fetch("/api/dashboard")
-      .then((res) => readJson<DashboardSummary>(res))
-      .then(setSummary)
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load dashboard summary"));
+    fetch("/api/issues")
+      .then((res) => readJson<{ items: IssueListItem[] }>(res))
+      .then((data) => setIssues(data.items ?? []))
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load risk queue"));
+
     fetch("/api/groups")
       .then((res) => readJson<{ items: GroupRef[] }>(res))
       .then((data) => setGroups(data.items ?? []))
       .catch(() => undefined);
   }, [refreshKey]);
-
-  useEffect(() => {
-    const params = new URLSearchParams();
-    if (status) params.set("status", status);
-    if (confidence) params.set("confidence", confidence);
-    if (ciClass) params.set("ciClass", ciClass);
-    if (supportGroup) params.set("supportGroup", supportGroup);
-    if (debouncedSearch) params.set("q", debouncedSearch);
-
-    const qs = params.toString();
-    fetch(`/api/issues${qs ? `?${qs}` : ""}`)
-      .then((res) => readJson<{ items: IssueListItem[] }>(res))
-      .then((data) => setIssues(data.items ?? []))
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load ownership issues"));
-  }, [status, confidence, ciClass, supportGroup, debouncedSearch, refreshKey]);
 
   async function handleRunDetection() {
     setDetectionPending(true);
@@ -96,21 +91,79 @@ export function DashboardClient({ canRunDetection }: { canRunDetection: boolean 
   }
 
   const supportGroupNames = useMemo(
-    () => Array.from(new Set(groups.map((g) => g.name))).sort(),
+    () => Array.from(new Set(groups.map((group) => group.name))).sort(),
     [groups]
   );
+
+  const riskSummary = useMemo(() => {
+    const open = (issues ?? []).filter(
+      (issue) => issue.reviewStatus === "open" || issue.reviewStatus === "in_review"
+    );
+    return {
+      critical: open.filter((issue) => issue.severityBand === "Critical").length,
+      high: open.filter((issue) => issue.severityBand === "High").length,
+      medium: open.filter((issue) => issue.severityBand === "Medium").length,
+      low: open.filter((issue) => issue.severityBand === "Low").length,
+      open: open.length,
+      guardrailAttention: open.filter((issue) => issue.guardrailStatus !== "pass").length,
+    };
+  }, [issues]);
+
+  const visibleIssues = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return (issues ?? [])
+      .filter((issue) => !status || issue.reviewStatus === status)
+      .filter((issue) => !confidence || (
+        confidence === "high" ? issue.aiConfidence >= 85 :
+        confidence === "medium" ? issue.aiConfidence >= 65 && issue.aiConfidence < 85 :
+        issue.aiConfidence < 65
+      ))
+      .filter((issue) => !severity || issue.severityBand === severity)
+      .filter((issue) => !category || issue.issueCategory === category)
+      .filter((issue) => !ciClass || issue.ciClass === ciClass)
+      .filter((issue) => !supportGroup || issue.currentSupportGroupName === supportGroup)
+      .filter((issue) => {
+        if (!needle) return true;
+        return [
+          issue.ciName,
+          issue.number,
+          issue.issueType,
+          issue.currentOwner ?? "",
+          issue.recommendedOwnerName ?? "",
+        ].join(" ").toLowerCase().includes(needle);
+      })
+      .sort((a, b) =>
+        SEVERITY_ORDER[b.severityBand] - SEVERITY_ORDER[a.severityBand] ||
+        b.severityScore - a.severityScore ||
+        Number(b.environment === "Production") - Number(a.environment === "Production") ||
+        b.aiConfidence - a.aiConfidence
+      );
+  }, [issues, status, confidence, severity, category, ciClass, supportGroup, search]);
 
   return (
     <div className="flex flex-col gap-6">
       {error && <ErrorCard title="Unable to complete request" message={error} />}
 
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+        <StatTile label="Critical" value={issues ? riskSummary.critical : "—"} accent="rose" />
+        <StatTile label="High Risk" value={issues ? riskSummary.high : "—"} accent="amber" />
+        <StatTile label="Medium Risk" value={issues ? riskSummary.medium : "—"} accent="blue" />
+        <StatTile label="Low Risk" value={issues ? riskSummary.low : "—"} accent="neutral" />
+        <StatTile label="Open Backlog" value={issues ? riskSummary.open : "—"} accent="blue" />
+        <StatTile
+          label="Guardrail Attention"
+          value={issues ? riskSummary.guardrailAttention : "—"}
+          accent={riskSummary.guardrailAttention ? "rose" : "green"}
+        />
+      </div>
+
       <Card className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-            Rule-based CMDB detection
+            Refresh risk findings
           </p>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Scans unlabeled CI records and creates findings from their current field values.
+            Scan unlabeled team-scoped CI records and add newly derived issues to the queue.
           </p>
         </div>
         <Button onClick={handleRunDetection} disabled={!canRunDetection || detectionPending}>
@@ -133,111 +186,99 @@ export function DashboardClient({ canRunDetection }: { canRunDetection: boolean 
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-7">
-        <StatTile label="Total Issues" value={summary?.total ?? "—"} />
-        <StatTile label="Open Issues" value={summary?.open ?? "—"} accent="blue" />
-        <StatTile label="Resolved" value={summary?.resolved ?? "—"} accent="green" />
-        <StatTile label="Deferred" value={summary?.deferred ?? "—"} accent="neutral" />
-        <StatTile label="High Confidence" value={summary?.highConfidence ?? "—"} accent="green" />
-        <StatTile label="Medium Confidence" value={summary?.mediumConfidence ?? "—"} accent="amber" />
-        <StatTile label="Low Confidence" value={summary?.lowConfidence ?? "—"} accent="rose" />
-      </div>
-
       <Card className="p-4">
+        <div className="mb-3 flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Risk queue</p>
+            <p className="text-xs text-zinc-500">Worst-first across severity, environment, and confidence.</p>
+          </div>
+          <p className="text-xs tabular-nums text-zinc-500">{visibleIssues.length} findings</p>
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           <Input
-            placeholder="Search CI, owner, support group, recommendation…"
+            placeholder="Search CI, issue, owner, recommendation…"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-72"
+            onChange={(event) => setSearch(event.target.value)}
+            className="w-full sm:w-72"
           />
-          <Select value={status} onChange={(e) => setStatus(e.target.value as ReviewStatus | "")}>
+          <Select value={severity} onChange={(event) => setSeverity(event.target.value as SeverityBand | "")}>
+            <option value="">All severity</option>
+            <option value="Critical">Critical</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </Select>
+          <Select value={category} onChange={(event) => setCategory(event.target.value as IssueCategory | "")}>
+            <option value="">All categories</option>
+            <option value="ownership">Ownership</option>
+            <option value="relationship">Relationship</option>
+          </Select>
+          <Select value={status} onChange={(event) => setStatus(event.target.value as ReviewStatus | "")}>
             <option value="">All statuses</option>
             <option value="open">Open</option>
             <option value="in_review">In Review</option>
             <option value="resolved">Resolved</option>
             <option value="deferred">Deferred</option>
           </Select>
-          <Select
-            value={confidence}
-            onChange={(e) => setConfidence(e.target.value as ConfidenceLevel | "")}
-          >
+          <Select value={confidence} onChange={(event) => setConfidence(event.target.value as ConfidenceLevel | "")}>
             <option value="">All confidence</option>
             <option value="high">High</option>
             <option value="medium">Medium</option>
             <option value="low">Low</option>
           </Select>
-          <Select value={ciClass} onChange={(e) => setCiClass(e.target.value)}>
+          <Select value={ciClass} onChange={(event) => setCiClass(event.target.value)}>
             <option value="">All CI classes</option>
-            {CI_CLASSES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
+            {CI_CLASSES.map((value) => <option key={value}>{value}</option>)}
           </Select>
-          <Select value={supportGroup} onChange={(e) => setSupportGroup(e.target.value)}>
+          <Select value={supportGroup} onChange={(event) => setSupportGroup(event.target.value)}>
             <option value="">All support groups</option>
-            {supportGroupNames.map((g) => (
-              <option key={g} value={g}>
-                {g}
-              </option>
-            ))}
+            {supportGroupNames.map((value) => <option key={value}>{value}</option>)}
           </Select>
         </div>
       </Card>
 
-      <Card className="overflow-hidden">
-        <table className="w-full text-left text-sm">
+      <Card className="overflow-x-auto">
+        <table className="w-full min-w-[1080px] text-left text-sm">
           <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
             <tr>
-              <th className="px-4 py-3">CI Name</th>
-              <th className="px-4 py-3">CI Class</th>
-              <th className="px-4 py-3">Current Owner</th>
-              <th className="px-4 py-3">Recommended Owner</th>
+              <th className="px-4 py-3">Severity</th>
+              <th className="px-4 py-3">Finding</th>
+              <th className="px-4 py-3">Environment</th>
+              <th className="px-4 py-3">Ownership decision</th>
               <th className="px-4 py-3">Confidence</th>
-              <th className="px-4 py-3">Review Status</th>
-              <th className="px-4 py-3">Date Found</th>
+              <th className="px-4 py-3">Guardrails</th>
+              <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Found</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {issues === null && (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-zinc-400">
-                  Loading ownership issues…
-                </td>
-              </tr>
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-zinc-400">Loading risk queue…</td></tr>
             )}
-            {issues?.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-zinc-400">
-                  No ownership issues match the current filters.
-                </td>
-              </tr>
+            {issues !== null && visibleIssues.length === 0 && (
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-zinc-400">No findings match the current filters.</td></tr>
             )}
-            {issues?.map((issue) => (
+            {visibleIssues.map((issue) => (
               <tr key={issue.sys_id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900">
-                <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">
-                  <Link href={`/issue/${issue.sys_id}`} className="hover:underline">
+                <td className="px-4 py-3"><SeverityBadge band={issue.severityBand} score={issue.severityScore} /></td>
+                <td className="px-4 py-3">
+                  <Link href={`/issue/${issue.sys_id}`} className="font-medium text-zinc-900 hover:underline dark:text-zinc-100">
                     {issue.ciName}
                   </Link>
-                  <div className="text-xs font-normal text-zinc-400">{issue.number}</div>
+                  <div className="mt-0.5 text-xs text-zinc-500">
+                    {formatIssueType(issue.issueType)} · {issue.ciClass} · {issue.issueCategory}
+                  </div>
                 </td>
-                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{issue.ciClass}</td>
+                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{issue.environment}</td>
                 <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
-                  {issue.currentOwner ?? issue.currentSupportGroupName ?? "Unowned"}
+                  <span>{issue.currentOwner ?? issue.currentSupportGroupName ?? "Unowned"}</span>
+                  <span className="mx-2 text-zinc-300 dark:text-zinc-700">→</span>
+                  <span className="font-medium text-zinc-900 dark:text-zinc-100">{issue.recommendedOwnerName ?? "Manual review"}</span>
                 </td>
-                <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
-                  {issue.recommendedOwnerName ?? "—"}
-                </td>
-                <td className="px-4 py-3">
-                  <ConfidenceBadge score={issue.aiConfidence} />
-                </td>
-                <td className="px-4 py-3">
-                  <ReviewStatusBadge status={issue.reviewStatus} />
-                </td>
-                <td className="px-4 py-3 text-zinc-500">
-                  {new Date(issue.dateIdentified).toLocaleDateString()}
-                </td>
+                <td className="px-4 py-3"><ConfidenceBadge score={issue.aiConfidence} /></td>
+                <td className="px-4 py-3"><GuardrailBadge status={issue.guardrailStatus} /></td>
+                <td className="px-4 py-3"><ReviewStatusBadge status={issue.reviewStatus} /></td>
+                <td className="px-4 py-3 text-zinc-500">{formatDate(issue.dateIdentified)}</td>
               </tr>
             ))}
           </tbody>
