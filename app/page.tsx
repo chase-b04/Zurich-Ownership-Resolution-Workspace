@@ -1,6 +1,12 @@
 import { DashboardClient } from "@/components/dashboard/dashboard-client";
+import { cookies } from "next/headers";
+import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  const role = token ? verifySessionToken(token) : null;
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -9,7 +15,7 @@ export default function DashboardPage() {
           Visibility into ownership issues across the CMDB.
         </p>
       </div>
-      <DashboardClient />
+      <DashboardClient canRunDetection={role === "steward"} />
     </div>
   );
 }

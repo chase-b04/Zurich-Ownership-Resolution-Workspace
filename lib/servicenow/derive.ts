@@ -88,9 +88,10 @@ export function computeHealthMetrics(issues: OwnershipIssue[]): CmdbHealthMetric
   );
 
   const now = Date.now();
-  const ageInDays = (i: OwnershipIssue) =>
-    (now - new Date(i.dateIdentified).getTime()) / 86_400_000;
-  const openAges = openIssues.map(ageInDays);
+  const openAges = openIssues
+    .map((issue) => new Date(issue.dateIdentified).getTime())
+    .filter((identifiedAt) => Number.isFinite(identifiedAt))
+    .map((identifiedAt) => Math.max(0, (now - identifiedAt) / 86_400_000));
 
   const ownershipCoveragePct = totalFlagged
     ? Math.round(((totalFlagged - unowned) / totalFlagged) * 100)

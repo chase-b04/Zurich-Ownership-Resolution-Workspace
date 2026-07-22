@@ -6,9 +6,12 @@ import { StatTile } from "@/components/stat-tile";
 import { ConfidenceBadge, ReviewStatusBadge } from "@/components/status-badges";
 import { Input, Select } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { ErrorCard } from "@/components/error-card";
 import {
   ConfidenceLevel,
   DashboardSummary,
+  DetectionRunResult,
   GroupRef,
   IssueListItem,
   ReviewStatus,
@@ -25,11 +28,22 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
-export function DashboardClient() {
+async function readJson<T>(res: Response): Promise<T> {
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(body?.error?.message ?? `Request failed (${res.status})`);
+  }
+  return body as T;
+}
+
+export function DashboardClient({ canRunDetection }: { canRunDetection: boolean }) {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [issues, setIssues] = useState<IssueListItem[] | null>(null);
   const [groups, setGroups] = useState<GroupRef[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [detectionResult, setDetectionResult] = useState<DetectionRunResult | null>(null);
+  const [detectionPending, setDetectionPending] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const [status, setStatus] = useState<ReviewStatus | "">("");
   const [confidence, setConfidence] = useState<ConfidenceLevel | "">("");
@@ -40,14 +54,14 @@ export function DashboardClient() {
 
   useEffect(() => {
     fetch("/api/dashboard")
-      .then((res) => res.json())
+      .then((res) => readJson<DashboardSummary>(res))
       .then(setSummary)
-      .catch(() => setError("Failed to load dashboard summary"));
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load dashboard summary"));
     fetch("/api/groups")
-      .then((res) => res.json())
+      .then((res) => readJson<{ items: GroupRef[] }>(res))
       .then((data) => setGroups(data.items ?? []))
       .catch(() => undefined);
-  }, []);
+  }, [refreshKey]);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -59,10 +73,27 @@ export function DashboardClient() {
 
     const qs = params.toString();
     fetch(`/api/issues${qs ? `?${qs}` : ""}`)
-      .then((res) => res.json())
+      .then((res) => readJson<{ items: IssueListItem[] }>(res))
       .then((data) => setIssues(data.items ?? []))
-      .catch(() => setError("Failed to load ownership issues"));
-  }, [status, confidence, ciClass, supportGroup, debouncedSearch]);
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load ownership issues"));
+  }, [status, confidence, ciClass, supportGroup, debouncedSearch, refreshKey]);
+
+  async function handleRunDetection() {
+    setDetectionPending(true);
+    setDetectionResult(null);
+    setError(null);
+    try {
+      const result = await readJson<DetectionRunResult>(
+        await fetch("/api/detection/run", { method: "POST" })
+      );
+      setDetectionResult(result);
+      setRefreshKey((key) => key + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Detection failed");
+    } finally {
+      setDetectionPending(false);
+    }
+  }
 
   const supportGroupNames = useMemo(
     () => Array.from(new Set(groups.map((g) => g.name))).sort(),
@@ -71,9 +102,34 @@ export function DashboardClient() {
 
   return (
     <div className="flex flex-col gap-6">
-      {error && (
-        <Card className="border-rose-300 bg-rose-50 p-4 text-sm text-rose-700 dark:bg-rose-950 dark:text-rose-300">
-          {error}
+      {error && <ErrorCard title="Unable to complete request" message={error} />}
+
+      <Card className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+            Rule-based CMDB detection
+          </p>
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            Scans unlabeled CI records and creates findings from their current field values.
+          </p>
+        </div>
+        <Button onClick={handleRunDetection} disabled={!canRunDetection || detectionPending}>
+          {detectionPending ? "Running detection…" : "Run detection"}
+        </Button>
+      </Card>
+
+      {!canRunDetection && (
+        <p className="-mt-4 text-xs text-zinc-500">
+          Viewer access is read-only. Sign in with the steward access key to run detection.
+        </p>
+      )}
+
+      {detectionResult && (
+        <Card className="border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
+          <p className="font-medium">{detectionResult.message}</p>
+          <p className="mt-1 text-xs">
+            Scanned {detectionResult.scanned} · Created {detectionResult.created} · Skipped existing {detectionResult.skipped_existing} · Source {detectionResult.source}
+          </p>
         </Card>
       )}
 

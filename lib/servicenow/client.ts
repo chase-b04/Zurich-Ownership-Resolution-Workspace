@@ -7,6 +7,7 @@ import {
   DashboardSummary,
   DecisionRequest,
   DecisionResponse,
+  DetectionRunResult,
   EvidenceItem,
   GroupRef,
   IssueFilters,
@@ -214,6 +215,15 @@ export async function submitDecision(
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+}
+
+export async function runDetection(): Promise<DetectionRunResult> {
+  if (!isLiveConfigured()) return mock.runDetection();
+
+  const result = await snFetch<Omit<DetectionRunResult, "source">>("/detection/run", {
+    method: "POST",
+  });
+  return { ...result, source: "servicenow" };
 }
 
 export async function getDashboardSummary(): Promise<DashboardSummary> {

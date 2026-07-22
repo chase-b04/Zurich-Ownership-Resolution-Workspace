@@ -10,6 +10,8 @@ export function StatTile({
   value: number | string;
   accent?: "blue" | "green" | "amber" | "rose" | "neutral";
 }) {
+  const displayValue =
+    typeof value === "number" && !Number.isFinite(value) ? "—" : value;
   const accentClass =
     accent === "blue"
       ? "text-blue-600 dark:text-blue-400"
@@ -27,7 +29,9 @@ export function StatTile({
         <CardTitle>{label}</CardTitle>
       </CardHeader>
       <CardContent>
-        <p className={cn("text-3xl font-semibold tabular-nums", accentClass)}>{value}</p>
+        <p className={cn("text-3xl font-semibold tabular-nums", accentClass)}>
+          {displayValue}
+        </p>
       </CardContent>
     </Card>
   );

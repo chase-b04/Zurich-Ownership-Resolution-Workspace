@@ -32,7 +32,7 @@ SERVICENOW_API_PATH=/api/x_cmdb_ownership/ownership
 Once all three of `SERVICENOW_URL`/`SERVICENOW_USERNAME`/`SERVICENOW_PASSWORD`
 are set, `lib/servicenow/client.ts` calls the real Ownership API
 (`GET /groups`, `GET /issues`, `GET /issues/{sys_id}`,
-`PATCH /issues/{sys_id}/decision`) instead of the mock store. Credentials are
+`PATCH /issues/{sys_id}/decision`, `POST /detection/run`) instead of the mock store. Credentials are
 only ever read server-side (API routes and Server Components) — the browser
 never talks to ServiceNow directly.
 
@@ -83,5 +83,8 @@ proxy.ts                       Route gate: requires a valid session cookie
 ## Notes
 
 - The mock store resets whenever the dev server restarts.
+- Live detection requires a `POST /detection/run` Scripted REST resource. It must scan
+  raw team-scoped CMDB records, derive findings from current field values, deduplicate
+  open findings, and return `{ run_id, scanned, created, skipped_existing, message }`.
 - Auth is demo-tier only (see above) — replace it with Entra ID/NextAuth
   before any real production exposure.

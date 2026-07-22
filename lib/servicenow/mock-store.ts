@@ -2,6 +2,7 @@ import {
   ActivityEntry,
   DecisionRequest,
   DecisionResponse,
+  DetectionRunResult,
   GroupRef,
   IssueFilters,
   IssueListItem,
@@ -20,6 +21,20 @@ const GROUPS: GroupRef[] = [
   { sys_id: "grp-network-eng", name: "Network-Engineering" },
   { sys_id: "grp-data-eng", name: "Data-Engineering" },
   { sys_id: "grp-checkout-svc", name: "Checkout-Services" },
+];
+
+// These records intentionally contain no issue label. The mock detector derives
+// missing ownership from their ordinary CMDB-like fields, mirroring the live
+// ServiceNow detector without pretending these are pre-classified findings.
+const RAW_MOCK_CIS = [
+  {
+    sys_id: "ci-customer-profile-worker",
+    name: "customer-profile-worker",
+    ciClass: "Application",
+    supportGroup: null,
+    managedBy: "j.alvarez",
+    relatedOwnerSignals: ["Checkout-Services", "Checkout-Services", "App-Support"],
+  },
 ];
 
 function group(name: string): GroupRef {
@@ -478,7 +493,6 @@ interface MockStore {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __ownershipMockStore: MockStore | undefined;
 }
 
@@ -550,6 +564,86 @@ export function listGroups(): GroupRef[] {
 
 export function listActivity(): ActivityEntry[] {
   return getStore().activityLog;
+}
+
+export function runDetection(): DetectionRunResult {
+  const store = getStore();
+  let created = 0;
+  let skippedExisting = 0;
+
+  for (const ci of RAW_MOCK_CIS) {
+    if (ci.supportGroup) continue;
+
+    const findingId = `detected-${ci.sys_id}`;
+    if (store.issues.some((issue) => issue.sys_id === findingId)) {
+      skippedExisting += 1;
+      continue;
+    }
+
+    const ownerCounts = ci.relatedOwnerSignals.reduce<Record<string, number>>((counts, owner) => {
+      counts[owner] = (counts[owner] ?? 0) + 1;
+      return counts;
+    }, {});
+    const [recommendedOwnerName, supportingRelationships] = Object.entries(ownerCounts).sort(
+      ([, a], [, b]) => b - a
+    )[0];
+    const recommendedOwner = group(recommendedOwnerName);
+    const now = new Date().toISOString();
+    const issue: OwnershipIssue = {
+      sys_id: findingId,
+      number: `OWN${String(store.issues.length + 1001).padStart(7, "0")}`,
+      childCi: { sys_id: ci.sys_id, name: ci.name, ciClass: ci.ciClass },
+      relationshipType: "missing_owner",
+      currentOwner: null,
+      currentSupportGroup: null,
+      managedBy: ci.managedBy,
+      evidence: [
+        {
+          type: "relationship_owner_majority",
+          value: `${supportingRelationships} of ${ci.relatedOwnerSignals.length} related CIs are owned by ${recommendedOwnerName}`,
+          weight: 60,
+        },
+      ],
+      aiReason: "Missing owner derived from raw CI state",
+      aiRationale: `${recommendedOwnerName} owns the majority of directly related CIs. Human approval is still required before any CMDB update.`,
+      aiConfidence: 82,
+      recommendedOwner,
+      reviewStatus: "open",
+      decision: null,
+      decisionNotes: null,
+      finalOwner: null,
+      notes: "Created by on-demand rule-based detection from an unlabeled raw CI.",
+      dateIdentified: now,
+      created: now,
+      createdBy: "ownership.detector",
+      updated: now,
+      updatedBy: "ownership.detector",
+    };
+
+    store.issues.unshift(issue);
+    store.activityLog.unshift({
+      id: `act-detected-${ci.sys_id}`,
+      type: "recommendation_generated",
+      issueNumber: issue.number,
+      issueSysId: issue.sys_id,
+      ciName: ci.name,
+      message: `Rule-based detection found missing ownership; recommendation generated for ${recommendedOwnerName}`,
+      actor: "OwnershipDetector",
+      timestamp: now,
+    });
+    created += 1;
+  }
+
+  return {
+    run_id: `mock-detection-${Date.now()}`,
+    scanned: RAW_MOCK_CIS.length,
+    created,
+    skipped_existing: skippedExisting,
+    source: "mock",
+    message: created
+      ? `Detection created ${created} new finding from unlabeled CI data.`
+      : "Detection completed; every matching CI already has an open finding.",
+  };
 }
 
 export class MockApiError extends Error {

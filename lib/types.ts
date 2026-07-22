@@ -146,6 +146,15 @@ export interface ApiErrorBody {
   };
 }
 
+export interface DetectionRunResult {
+  run_id: string;
+  scanned: number;
+  created: number;
+  skipped_existing: number;
+  source: "servicenow" | "mock";
+  message: string;
+}
+
 export function confidenceLevel(score: number): ConfidenceLevel {
   if (score >= 85) return "high";
   if (score >= 65) return "medium";
