@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ErrorCard } from "@/components/error-card";
@@ -12,7 +11,6 @@ function nextPathFromLocation(): string {
 }
 
 export function LoginForm() {
-  const router = useRouter();
   const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<"steward" | "viewer" | null>(null);
@@ -28,8 +26,11 @@ export function LoginForm() {
       const responseBody = await res.json().catch(() => null);
       throw new Error(responseBody?.error?.message ?? "Sign-in failed");
     }
-    router.push(nextPathFromLocation());
-    router.refresh();
+    // Start a fresh request so the protected route is evaluated with the
+    // session cookie that was just written by the login response. A client
+    // router transition can reuse the unauthenticated route result prefetched
+    // before sign-in, which is especially noticeable on a production deploy.
+    window.location.replace(nextPathFromLocation());
   }
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
