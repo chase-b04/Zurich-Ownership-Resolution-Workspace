@@ -7,6 +7,7 @@ import {
   IssueFilters,
   IssueListItem,
   OwnershipIssue,
+  RelationshipChange,
   confidenceLevel,
 } from "@/lib/types";
 import {
@@ -42,6 +43,22 @@ const RAW_MOCK_CIS = [
     supportGroup: null,
     managedBy: "j.alvarez",
     relatedOwnerSignals: ["Checkout-Services", "Checkout-Services", "App-Support"],
+  },
+];
+
+interface MockRelationship {
+  sys_id: string;
+  relationshipType: string;
+  parentCi: { sys_id: string; name: string };
+  childCi: { sys_id: string; name: string };
+}
+
+const RAW_MOCK_RELATIONSHIPS: MockRelationship[] = [
+  {
+    sys_id: "rel-checkout-api-self-reference",
+    relationshipType: "Depends on",
+    parentCi: { sys_id: "ci-checkout-api", name: "checkout-api" },
+    childCi: { sys_id: "ci-checkout-api", name: "checkout-api" },
   },
 ];
 
@@ -455,6 +472,7 @@ function toOwnershipIssue(seed: SeedIssue): OwnershipIssue {
     aiRationale: seed.aiRationale,
     aiConfidence: seed.aiConfidence,
     recommendedOwner: seed.recommendedOwner,
+    recommendedChange: null,
     recommendationSource: "ai",
     guardrailResults,
     reviewStatus: seed.reviewStatus,
@@ -481,8 +499,10 @@ function seedActivity(issues: OwnershipIssue[]): ActivityEntry[] {
       issueNumber: issue.number,
       issueSysId: issue.sys_id,
       ciName: issue.childCi.name,
-      message: `AI recommended ${issue.recommendedOwner?.name ?? "no owner"} with ${issue.aiConfidence}% confidence`,
-      actor: "CMDBRelationshipAnalyzer",
+      message: issue.recommendedChange
+        ? `Rule-based analysis proposed removing a ${issue.recommendedChange.relationshipType} self-reference`
+        : `AI recommended ${issue.recommendedOwner?.name ?? "no owner"} with ${issue.aiConfidence}% confidence`,
+      actor: issue.recommendedChange ? "RelationshipDetector" : "CMDBRelationshipAnalyzer",
       timestamp: issue.created,
     });
     if (issue.decision) {
@@ -523,6 +543,7 @@ function seedActivity(issues: OwnershipIssue[]): ActivityEntry[] {
 interface MockStore {
   issues: OwnershipIssue[];
   activityLog: ActivityEntry[];
+  relationships: MockRelationship[];
 }
 
 declare global {
@@ -535,6 +556,11 @@ function getStore(): MockStore {
     globalThis.__ownershipMockStore = {
       issues: seededIssues,
       activityLog: seedActivity(seededIssues),
+      relationships: RAW_MOCK_RELATIONSHIPS.map((relationship) => ({
+        ...relationship,
+        parentCi: { ...relationship.parentCi },
+        childCi: { ...relationship.childCi },
+      })),
     };
   }
   return globalThis.__ownershipMockStore;
@@ -577,6 +603,9 @@ function toListItem(issue: OwnershipIssue): IssueListItem {
     environment: issue.environment,
     currentOwner: issue.currentOwner,
     recommendedOwnerName: issue.recommendedOwner?.name ?? null,
+    recommendedChangeSummary: issue.recommendedChange
+      ? `Remove ${issue.recommendedChange.relationshipType} self-reference`
+      : null,
     aiConfidence: issue.aiConfidence,
     reviewStatus: issue.reviewStatus,
     dateIdentified: issue.dateIdentified,
@@ -653,6 +682,7 @@ export function runDetection(): DetectionRunResult {
       aiRationale: `${recommendedOwnerName} owns the majority of directly related CIs. Human approval is still required before any CMDB update.`,
       aiConfidence: 82,
       recommendedOwner,
+      recommendedChange: null,
       recommendationSource: "ai",
       guardrailResults: deriveGuardrails({
         confidence: 82,
@@ -693,14 +723,100 @@ export function runDetection(): DetectionRunResult {
     created += 1;
   }
 
+  for (const relationship of store.relationships) {
+    if (relationship.parentCi.sys_id !== relationship.childCi.sys_id) continue;
+
+    const findingId = `detected-${relationship.sys_id}`;
+    if (store.issues.some((issue) => issue.sys_id === findingId)) {
+      skippedExisting += 1;
+      continue;
+    }
+
+    const now = new Date().toISOString();
+    const recommendedChange: RelationshipChange = {
+      action: "delete_relationship",
+      relationshipSysId: relationship.sys_id,
+      relationshipType: relationship.relationshipType,
+      parentCi: { ...relationship.parentCi },
+      childCi: { ...relationship.childCi },
+    };
+    const evidence = [
+      {
+        type: "relationship_integrity",
+        value: `${relationship.parentCi.name} is both the parent and child of relationship ${relationship.sys_id}`,
+        weight: 100,
+      },
+    ];
+    const rationale =
+      "The relationship points from the CI back to itself. Removing only this edge restores graph integrity without deleting or modifying the CI.";
+    const issue: OwnershipIssue = {
+      sys_id: findingId,
+      number: `REL${String(store.issues.length + 1001).padStart(7, "0")}`,
+      childCi: {
+        sys_id: relationship.childCi.sys_id,
+        name: relationship.childCi.name,
+        ciClass: "Application",
+      },
+      relationshipType: relationship.relationshipType,
+      currentOwner: "Checkout-Services",
+      currentSupportGroup: group("Checkout-Services"),
+      managedBy: "j.alvarez",
+      issueCategory: "relationship",
+      issueType: "self_reference",
+      severityScore: 100,
+      severityBand: "Critical",
+      environment: "Staging",
+      teamIdentifier: "ZURICH",
+      evidence,
+      aiReason: "Self-referencing CMDB relationship",
+      aiRationale: rationale,
+      aiConfidence: 100,
+      recommendedOwner: null,
+      recommendedChange,
+      recommendationSource: "deterministic_fallback",
+      guardrailResults: deriveGuardrails({
+        issueCategory: "relationship",
+        confidence: 100,
+        rationale,
+        evidence,
+        recommendedOwner: null,
+        recommendedChange,
+        teamIdentifier: "ZURICH",
+      }),
+      reviewStatus: "open",
+      decision: null,
+      decisionNotes: null,
+      finalOwner: null,
+      notes: "Created by rule-based relationship detection from cmdb_rel_ci state.",
+      dateIdentified: now,
+      created: now,
+      createdBy: "relationship.detector",
+      updated: now,
+      updatedBy: "relationship.detector",
+    };
+
+    store.issues.unshift(issue);
+    store.activityLog.unshift({
+      id: `act-detected-${relationship.sys_id}`,
+      type: "recommendation_generated",
+      issueNumber: issue.number,
+      issueSysId: issue.sys_id,
+      ciName: issue.childCi.name,
+      message: `Rule-based detection found a ${relationship.relationshipType} self-reference`,
+      actor: "RelationshipDetector",
+      timestamp: now,
+    });
+    created += 1;
+  }
+
   return {
     run_id: `mock-detection-${Date.now()}`,
-    scanned: RAW_MOCK_CIS.length,
+    scanned: RAW_MOCK_CIS.length + store.relationships.length,
     created,
     skipped_existing: skippedExisting,
     source: "mock",
     message: created
-      ? `Detection created ${created} new finding from unlabeled CI data.`
+      ? `Detection created ${created} new finding${created === 1 ? "" : "s"} from current CI and relationship state.`
       : "Detection completed; every matching CI already has an open finding.",
   };
 }
@@ -719,6 +835,87 @@ export function submitDecision(sysId: string, payload: DecisionRequest): Decisio
   if (!issue) throw new MockApiError(404, "Issue not found");
   if (issue.reviewStatus === "resolved") {
     throw new MockApiError(409, "Issue already resolved");
+  }
+
+  if (issue.issueCategory === "relationship") {
+    if (payload.decision === "overridden") {
+      throw new MockApiError(400, "Relationship recommendations cannot be overridden");
+    }
+
+    let relationshipUpdated = false;
+    if (payload.decision === "accepted") {
+      if (payload.relationship_action !== "delete_relationship") {
+        throw new MockApiError(
+          400,
+          "relationship_action must be delete_relationship when accepting this recommendation"
+        );
+      }
+      const change = issue.recommendedChange;
+      if (!change || change.action !== "delete_relationship") {
+        throw new MockApiError(409, "The finding no longer contains a valid relationship change");
+      }
+
+      const relationshipIndex = store.relationships.findIndex(
+        (relationship) => relationship.sys_id === change.relationshipSysId
+      );
+      const relationship = store.relationships[relationshipIndex];
+      if (
+        !relationship ||
+        relationship.parentCi.sys_id !== relationship.childCi.sys_id ||
+        relationship.parentCi.sys_id !== change.parentCi.sys_id
+      ) {
+        throw new MockApiError(
+          409,
+          "The relationship is missing or changed since detection; no change was applied"
+        );
+      }
+
+      store.relationships.splice(relationshipIndex, 1);
+      relationshipUpdated = true;
+    }
+
+    issue.decision = payload.decision;
+    issue.decisionNotes = payload.notes ?? issue.decisionNotes;
+    issue.reviewStatus = payload.decision === "deferred" ? "deferred" : "resolved";
+    issue.updatedBy = "steward.review";
+    issue.updated = new Date().toISOString();
+
+    const auditId = `audit-${issue.sys_id}-${Date.now()}`;
+    store.activityLog = [
+      {
+        id: `act-decision-${auditId}`,
+        type: "decision_submitted",
+        issueNumber: issue.number,
+        issueSysId: issue.sys_id,
+        ciName: issue.childCi.name,
+        message: `Relationship decision "${payload.decision}" submitted`,
+        actor: "steward.review",
+        timestamp: issue.updated,
+      },
+      ...(relationshipUpdated
+        ? [
+            {
+              id: `act-relationship-${auditId}`,
+              type: "relationship_changed" as const,
+              issueNumber: issue.number,
+              issueSysId: issue.sys_id,
+              ciName: issue.childCi.name,
+              message: `Removed self-referencing ${issue.recommendedChange?.relationshipType ?? "CMDB"} relationship`,
+              actor: "RelationshipDecisionService",
+              timestamp: issue.updated,
+            },
+          ]
+        : []),
+      ...store.activityLog,
+    ];
+
+    return {
+      issue_id: issue.sys_id,
+      status: issue.reviewStatus,
+      ci_updated: false,
+      relationship_updated: relationshipUpdated,
+      audit_record_id: auditId,
+    };
   }
 
   let finalGroup: GroupRef | null = issue.recommendedOwner;

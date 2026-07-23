@@ -27,6 +27,8 @@ SERVICENOW_URL=https://your-instance.service-now.com
 SERVICENOW_USERNAME=
 SERVICENOW_PASSWORD=
 SERVICENOW_API_PATH=/api/x_cmdb_ownership/ownership
+# Set only after POST /detection/run exists in the Scripted REST API.
+SERVICENOW_DETECTION_ENABLED=false
 ```
 
 Once all three of `SERVICENOW_URL`/`SERVICENOW_USERNAME`/`SERVICENOW_PASSWORD`
@@ -84,7 +86,13 @@ proxy.ts                       Route gate: requires a valid session cookie
 
 - The mock store resets whenever the dev server restarts.
 - Live detection requires a `POST /detection/run` Scripted REST resource. It must scan
-  raw team-scoped CMDB records, derive findings from current field values, deduplicate
+  raw CMDB records, derive findings from current field values, deduplicate
   open findings, and return `{ run_id, scanned, created, skipped_existing, message }`.
+  Until that resource is installed and `SERVICENOW_DETECTION_ENABLED=true`, the
+  dashboard shows a safe **Refresh findings** action instead.
+- Relationship findings may return a structured `recommended_change`. The supported
+  workflow is deliberately narrow: a steward can approve deletion of a confirmed
+  self-reference in `cmdb_rel_ci`, while neither endpoint CI is modified or deleted.
+  See `docs/servicenow-relationship-workflow.md` for the ServiceNow resource contract.
 - Auth is demo-tier only (see above) — replace it with Entra ID/NextAuth
   before any real production exposure.

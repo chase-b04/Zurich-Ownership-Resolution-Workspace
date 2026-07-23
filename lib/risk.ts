@@ -5,6 +5,7 @@ import type {
   GuardrailStatus,
   IssueCategory,
   RecommendationSource,
+  RelationshipChange,
   SeverityBand,
 } from "@/lib/types";
 
@@ -61,14 +62,41 @@ export function formatIssueType(issueType: string): string {
 }
 
 export function deriveGuardrails(input: {
+  issueCategory?: IssueCategory;
   confidence: number;
   rationale: string;
   evidence: EvidenceItem[];
   recommendedOwner: GroupRef | null;
+  recommendedChange?: RelationshipChange | null;
   teamIdentifier: string | null;
 }): GuardrailResult[] {
   const confidenceValid = Number.isFinite(input.confidence) && input.confidence >= 0 && input.confidence <= 100;
   const evidenceWeight = input.evidence.reduce((sum, item) => sum + Math.max(0, item.weight), 0);
+  const relationshipTargetValid =
+    input.recommendedChange?.action === "delete_relationship" &&
+    Boolean(input.recommendedChange.relationshipSysId) &&
+    Boolean(input.recommendedChange.parentCi.sys_id) &&
+    input.recommendedChange.parentCi.sys_id === input.recommendedChange.childCi.sys_id;
+  const targetStatus =
+    input.issueCategory === "relationship"
+      ? relationshipTargetValid
+        ? "pass"
+        : "fail"
+      : input.recommendedOwner?.sys_id
+        ? "pass"
+        : input.recommendedOwner?.name
+          ? "warn"
+          : "fail";
+  const targetDetail =
+    input.issueCategory === "relationship"
+      ? relationshipTargetValid
+        ? "The proposed change targets a resolvable self-referencing relationship."
+        : "The relationship target is missing, malformed, or is no longer a self-reference."
+      : input.recommendedOwner?.sys_id
+        ? "The recommended group has a resolvable ServiceNow identifier."
+        : input.recommendedOwner?.name
+          ? "A group name was returned, but its ServiceNow identifier was not supplied."
+          : "No valid recommended group was returned.";
 
   return [
     {
@@ -81,13 +109,9 @@ export function deriveGuardrails(input: {
     },
     {
       key: "target_exists",
-      label: "Recommended target exists",
-      status: input.recommendedOwner?.sys_id ? "pass" : input.recommendedOwner?.name ? "warn" : "fail",
-      detail: input.recommendedOwner?.sys_id
-        ? "The recommended group has a resolvable ServiceNow identifier."
-        : input.recommendedOwner?.name
-          ? "A group name was returned, but its ServiceNow identifier was not supplied."
-          : "No valid recommended group was returned.",
+      label: input.issueCategory === "relationship" ? "Relationship target verified" : "Recommended target exists",
+      status: targetStatus,
+      detail: targetDetail,
     },
     {
       key: "confidence_bounds",

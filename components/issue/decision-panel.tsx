@@ -24,8 +24,13 @@ export function DecisionPanel({
   const [showOverride, setShowOverride] = useState(false);
   const [pending, setPending] = useState<Decision | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [submittedDecision, setSubmittedDecision] = useState<Decision | null>(null);
+  const [submittedNotes, setSubmittedNotes] = useState<string | null>(null);
 
   const alreadyDecided = issue.reviewStatus === "resolved" || issue.reviewStatus === "deferred";
+  const isRelationship = issue.issueCategory === "relationship";
+  const displayedDecision = submittedDecision ?? issue.decision;
+  const displayedNotes = submittedNotes ?? issue.decisionNotes;
 
   async function submit(decision: Decision, finalGroupId?: string) {
     setPending(decision);
@@ -34,12 +39,22 @@ export function DecisionPanel({
       const res = await fetch(`/api/issues/${issue.sys_id}/decision`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision, final_group_id: finalGroupId, notes: notes || undefined }),
+        body: JSON.stringify({
+          decision,
+          final_group_id: finalGroupId,
+          relationship_action:
+            isRelationship && decision === "accepted"
+              ? issue.recommendedChange?.action
+              : undefined,
+          notes: notes || undefined,
+        }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error?.message ?? "Failed to submit decision");
       }
+      setSubmittedDecision(decision);
+      setSubmittedNotes(notes.trim() || null);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit decision");
@@ -61,11 +76,16 @@ export function DecisionPanel({
               <ReviewStatusBadge status={issue.reviewStatus} />
             </div>
             <p className="text-zinc-700 dark:text-zinc-300">
-              Decision: <span className="font-medium">{issue.decision}</span>
+              Decision:{" "}
+              <span className="font-medium">
+                {displayedDecision
+                  ? displayedDecision.charAt(0).toUpperCase() + displayedDecision.slice(1)
+                  : "Completed in ServiceNow"}
+              </span>
               {issue.finalOwner ? ` — final owner ${issue.finalOwner.name}` : ""}
             </p>
-            {issue.decisionNotes && (
-              <p className="text-zinc-500 dark:text-zinc-400">Notes: {issue.decisionNotes}</p>
+            {displayedNotes && (
+              <p className="text-zinc-500 dark:text-zinc-400">Notes: {displayedNotes}</p>
             )}
           </div>
         ) : role !== "steward" ? (
@@ -87,18 +107,32 @@ export function DecisionPanel({
 
             <div className="flex flex-wrap items-center gap-3">
               <Button
-                onClick={() => submit("accepted", issue.recommendedOwner?.sys_id)}
-                disabled={pending !== null}
+                onClick={() =>
+                  submit(
+                    "accepted",
+                    isRelationship ? undefined : issue.recommendedOwner?.sys_id
+                  )
+                }
+                disabled={
+                  pending !== null ||
+                  (isRelationship && issue.recommendedChange?.action !== "delete_relationship")
+                }
               >
-                {pending === "accepted" ? "Accepting…" : "Accept Recommendation"}
+                {pending === "accepted"
+                  ? "Applying…"
+                  : isRelationship
+                    ? "Remove Self-Reference"
+                    : "Accept Recommendation"}
               </Button>
-              <Button
-                variant="outline"
-                onClick={() => setShowOverride((v) => !v)}
-                disabled={pending !== null}
-              >
-                Override Recommendation
-              </Button>
+              {!isRelationship && (
+                <Button
+                  variant="outline"
+                  onClick={() => setShowOverride((v) => !v)}
+                  disabled={pending !== null}
+                >
+                  Override Recommendation
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 onClick={() => submit("deferred")}
@@ -108,7 +142,15 @@ export function DecisionPanel({
               </Button>
             </div>
 
-            {showOverride && (
+            {isRelationship && (
+              <p className="text-xs leading-5 text-zinc-500 dark:text-zinc-400">
+                This removes only the identified relationship record. Neither endpoint CI is
+                deleted or modified, and ServiceNow must revalidate the relationship before
+                applying the change.
+              </p>
+            )}
+
+            {!isRelationship && showOverride && (
               <div className="flex flex-wrap items-center gap-3 rounded-md border border-zinc-200 p-3 dark:border-zinc-800">
                 <Select
                   value={overrideGroupId}

@@ -10,7 +10,17 @@ const TYPE_LABEL: Record<ActivityType, { label: string; tone: "blue" | "green" |
   recommendation_generated: { label: "Recommendation", tone: "blue" },
   decision_submitted: { label: "Decision", tone: "amber" },
   ownership_changed: { label: "Ownership Changed", tone: "green" },
+  relationship_changed: { label: "Relationship Changed", tone: "green" },
 };
+
+function formatActivityTimestamp(value: string): string {
+  if (!value.trim()) return "Not supplied";
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)
+    ? value.replace(" ", "T")
+    : value;
+  const timestamp = new Date(normalized);
+  return Number.isFinite(timestamp.getTime()) ? timestamp.toLocaleString() : "Not supplied";
+}
 
 export default async function ActivityPage() {
   const entries = await listActivity();
@@ -20,7 +30,7 @@ export default async function ActivityPage() {
       <div>
         <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Activity History</h1>
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Recommendations generated, decisions submitted, and ownership changes.
+          Recommendations generated, decisions submitted, and CMDB changes.
         </p>
       </div>
 
@@ -47,7 +57,7 @@ export default async function ActivityPage() {
                 <p className="text-xs text-zinc-400">{entry.actor}</p>
               </div>
               <span className="shrink-0 text-xs text-zinc-400">
-                {new Date(entry.timestamp).toLocaleString()}
+                {formatActivityTimestamp(entry.timestamp)}
               </span>
             </div>
           );

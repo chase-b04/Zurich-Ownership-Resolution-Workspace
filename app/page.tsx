@@ -1,6 +1,7 @@
 import { DashboardClient } from "@/components/dashboard/dashboard-client";
 import { cookies } from "next/headers";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
+import { isDetectionAvailable } from "@/lib/servicenow/client";
 
 export default async function DashboardPage() {
   const cookieStore = await cookies();
@@ -15,7 +16,10 @@ export default async function DashboardPage() {
           Prioritize CMDB remediation by operational risk, then review the evidence and safeguards.
         </p>
       </div>
-      <DashboardClient canRunDetection={role === "steward"} />
+      <DashboardClient
+        canRunDetection={role === "steward"}
+        detectionAvailable={isDetectionAvailable()}
+      />
     </div>
   );
 }

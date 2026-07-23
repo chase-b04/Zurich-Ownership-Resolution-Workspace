@@ -18,15 +18,18 @@ export function LoginForm() {
   const [pending, setPending] = useState(false);
   const [showAccessKey, setShowAccessKey] = useState(false);
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    const submittedApiKey = String(
+      new FormData(e.currentTarget).get("apiKey") ?? apiKey
+    );
     setPending(true);
     setError(null);
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey }),
+        body: JSON.stringify({ apiKey: submittedApiKey }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
@@ -47,6 +50,7 @@ export function LoginForm() {
         <label className="mb-1 block text-xs font-medium text-zinc-500">Access Key</label>
         <div className="relative">
           <Input
+            name="apiKey"
             type={showAccessKey ? "text" : "password"}
             placeholder="Enter your steward or viewer access key"
             value={apiKey}
@@ -54,6 +58,7 @@ export function LoginForm() {
             className="w-full pr-11"
             autoComplete="current-password"
             autoFocus
+            required
           />
           <button
             type="button"
@@ -74,7 +79,7 @@ export function LoginForm() {
           </button>
         </div>
       </div>
-      <Button type="submit" disabled={pending || !apiKey}>
+      <Button type="submit" disabled={pending}>
         {pending ? "Signing in…" : "Sign in"}
       </Button>
       {error && <ErrorCard title="Sign-in failed" message={error} />}

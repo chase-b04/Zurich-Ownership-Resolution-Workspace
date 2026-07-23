@@ -45,12 +45,22 @@ function formatDate(value: string): string {
   return Number.isFinite(date.getTime()) ? date.toLocaleDateString() : "Not supplied";
 }
 
-export function DashboardClient({ canRunDetection }: { canRunDetection: boolean }) {
+export function DashboardClient({
+  canRunDetection,
+  detectionAvailable,
+}: {
+  canRunDetection: boolean;
+  detectionAvailable: boolean;
+}) {
   const [issues, setIssues] = useState<IssueListItem[] | null>(null);
   const [groups, setGroups] = useState<GroupRef[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [detectionResult, setDetectionResult] = useState<DetectionRunResult | null>(null);
   const [detectionPending, setDetectionPending] = useState(false);
+  const [refreshFeedback, setRefreshFeedback] = useState<{
+    count: number;
+    refreshedAt: string;
+  } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const [status, setStatus] = useState<ReviewStatus | "">("");
@@ -74,8 +84,41 @@ export function DashboardClient({ canRunDetection }: { canRunDetection: boolean 
   }, [refreshKey]);
 
   async function handleRunDetection() {
+    if (!detectionAvailable) {
+      setDetectionPending(true);
+      setRefreshFeedback(null);
+      setError(null);
+      try {
+        const [issueData, groupData] = await Promise.all([
+          fetch("/api/issues").then((res) =>
+            readJson<{ items: IssueListItem[] }>(res)
+          ),
+          fetch("/api/groups").then((res) =>
+            readJson<{ items: GroupRef[] }>(res)
+          ),
+        ]);
+        const refreshedIssues = issueData.items ?? [];
+        setIssues(refreshedIssues);
+        setGroups(groupData.items ?? []);
+        setRefreshFeedback({
+          count: refreshedIssues.length,
+          refreshedAt: new Date().toLocaleTimeString([], {
+            hour: "numeric",
+            minute: "2-digit",
+            second: "2-digit",
+          }),
+        });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Refresh failed");
+      } finally {
+        setDetectionPending(false);
+      }
+      return;
+    }
+
     setDetectionPending(true);
     setDetectionResult(null);
+    setRefreshFeedback(null);
     setError(null);
     try {
       const result = await readJson<DetectionRunResult>(
@@ -160,18 +203,31 @@ export function DashboardClient({ canRunDetection }: { canRunDetection: boolean 
       <Card className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-            Refresh risk findings
+            {detectionAvailable ? "Run risk detection" : "Refresh risk findings"}
           </p>
           <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-            Scan unlabeled team-scoped CI records and add newly derived issues to the queue.
+            {detectionAvailable
+              ? "Scan current CI and relationship records and add newly derived issues to the queue."
+              : "Reload findings already produced by ServiceNow. Detection is not installed on this API."}
           </p>
         </div>
-        <Button onClick={handleRunDetection} disabled={!canRunDetection || detectionPending}>
-          {detectionPending ? "Running detection…" : "Run detection"}
+        <Button
+          onClick={handleRunDetection}
+          disabled={(detectionAvailable && !canRunDetection) || detectionPending}
+        >
+          {detectionPending
+            ? detectionAvailable
+              ? "Running detection…"
+              : "Refreshing…"
+            : detectionAvailable
+              ? "Run detection"
+              : refreshFeedback
+                ? "Refresh again"
+                : "Refresh findings"}
         </Button>
       </Card>
 
-      {!canRunDetection && (
+      {detectionAvailable && !canRunDetection && (
         <p className="-mt-4 text-xs text-zinc-500">
           Viewer access is read-only. Sign in with the steward access key to run detection.
         </p>
@@ -182,6 +238,20 @@ export function DashboardClient({ canRunDetection }: { canRunDetection: boolean 
           <p className="font-medium">{detectionResult.message}</p>
           <p className="mt-1 text-xs">
             Scanned {detectionResult.scanned} · Created {detectionResult.created} · Skipped existing {detectionResult.skipped_existing} · Source {detectionResult.source}
+          </p>
+        </Card>
+      )}
+
+      {refreshFeedback && (
+        <Card
+          className="border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
+          role="status"
+          aria-live="polite"
+        >
+          <p className="font-medium">Findings refreshed successfully</p>
+          <p className="mt-1 text-xs">
+            Loaded {refreshFeedback.count} findings from ServiceNow at{" "}
+            {refreshFeedback.refreshedAt}.
           </p>
         </Card>
       )}
@@ -271,9 +341,19 @@ export function DashboardClient({ canRunDetection }: { canRunDetection: boolean 
                 </td>
                 <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">{issue.environment}</td>
                 <td className="px-4 py-3 text-zinc-600 dark:text-zinc-400">
-                  <span>{issue.currentOwner ?? issue.currentSupportGroupName ?? "Unowned"}</span>
-                  <span className="mx-2 text-zinc-300 dark:text-zinc-700">→</span>
-                  <span className="font-medium text-zinc-900 dark:text-zinc-100">{issue.recommendedOwnerName ?? "Manual review"}</span>
+                  {issue.recommendedChangeSummary ? (
+                    <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                      {issue.recommendedChangeSummary}
+                    </span>
+                  ) : (
+                    <>
+                      <span>{issue.currentOwner ?? issue.currentSupportGroupName ?? "Unowned"}</span>
+                      <span className="mx-2 text-zinc-300 dark:text-zinc-700">→</span>
+                      <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                        {issue.recommendedOwnerName ?? "Manual review"}
+                      </span>
+                    </>
+                  )}
                 </td>
                 <td className="px-4 py-3"><ConfidenceBadge score={issue.aiConfidence} /></td>
                 <td className="px-4 py-3"><GuardrailBadge status={issue.guardrailStatus} /></td>

@@ -28,6 +28,12 @@ export async function PATCH(
     if (body.decision === "overridden" && !body.final_group_id) {
       return errorResponse(400, "final_group_id is required when overriding a recommendation");
     }
+    if (
+      body.relationship_action !== undefined &&
+      body.relationship_action !== "delete_relationship"
+    ) {
+      return errorResponse(400, "relationship_action must be delete_relationship");
+    }
 
     const result = await submitDecision(id, body as DecisionRequest);
     return NextResponse.json(result);

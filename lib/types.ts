@@ -37,6 +37,19 @@ export interface EvidenceItem {
   weight: number;
 }
 
+export interface RelationshipEndpoint {
+  sys_id: string;
+  name: string;
+}
+
+export interface RelationshipChange {
+  action: "delete_relationship";
+  relationshipSysId: string;
+  relationshipType: string;
+  parentCi: RelationshipEndpoint;
+  childCi: RelationshipEndpoint;
+}
+
 export interface OwnershipIssue {
   sys_id: string;
   number: string;
@@ -60,6 +73,7 @@ export interface OwnershipIssue {
   aiRationale: string;
   aiConfidence: number;
   recommendedOwner: GroupRef | null;
+  recommendedChange: RelationshipChange | null;
   recommendationSource: RecommendationSource;
   guardrailResults: GuardrailResult[];
   reviewStatus: ReviewStatus;
@@ -86,6 +100,7 @@ export interface IssueListItem {
   environment: string;
   currentOwner: string | null;
   recommendedOwnerName: string | null;
+  recommendedChangeSummary: string | null;
   aiConfidence: number;
   reviewStatus: ReviewStatus;
   dateIdentified: string;
@@ -140,7 +155,8 @@ export interface CmdbHealthMetrics {
 export type ActivityType =
   | "recommendation_generated"
   | "decision_submitted"
-  | "ownership_changed";
+  | "ownership_changed"
+  | "relationship_changed";
 
 export interface ActivityEntry {
   id: string;
@@ -156,6 +172,7 @@ export interface ActivityEntry {
 export interface DecisionRequest {
   decision: Decision;
   final_group_id?: string;
+  relationship_action?: RelationshipChange["action"];
   notes?: string;
 }
 
@@ -164,6 +181,7 @@ export interface DecisionResponse {
   status: ReviewStatus;
   final_group_id?: string;
   ci_updated: boolean;
+  relationship_updated?: boolean;
   audit_record_id: string;
 }
 

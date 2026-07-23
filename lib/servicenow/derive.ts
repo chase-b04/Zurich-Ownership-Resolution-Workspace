@@ -140,8 +140,10 @@ export function deriveActivityFromIssues(issues: OwnershipIssue[]): ActivityEntr
       issueNumber: issue.number,
       issueSysId: issue.sys_id,
       ciName: issue.childCi.name,
-      message: `AI recommended ${issue.recommendedOwner?.name ?? "no owner"} with ${issue.aiConfidence}% confidence`,
-      actor: "CMDBRelationshipAnalyzer",
+      message: issue.recommendedChange
+        ? `Rule-based analysis proposed removing a ${issue.recommendedChange.relationshipType} self-reference`
+        : `AI recommended ${issue.recommendedOwner?.name ?? "no owner"} with ${issue.aiConfidence}% confidence`,
+      actor: issue.recommendedChange ? "RelationshipDetector" : "CMDBRelationshipAnalyzer",
       timestamp: issue.created,
     });
 
@@ -156,6 +158,23 @@ export function deriveActivityFromIssues(issues: OwnershipIssue[]): ActivityEntr
         actor: "steward.review",
         timestamp: issue.updated,
       });
+
+      if (
+        issue.issueCategory === "relationship" &&
+        issue.decision === "accepted" &&
+        issue.reviewStatus === "resolved"
+      ) {
+        entries.push({
+          id: `derived-relationship-${issue.sys_id}`,
+          type: "relationship_changed",
+          issueNumber: issue.number,
+          issueSysId: issue.sys_id,
+          ciName: issue.childCi.name,
+          message: `Removed self-referencing ${issue.recommendedChange?.relationshipType ?? "CMDB"} relationship`,
+          actor: "RelationshipDecisionService",
+          timestamp: issue.updated,
+        });
+      }
     }
   }
 

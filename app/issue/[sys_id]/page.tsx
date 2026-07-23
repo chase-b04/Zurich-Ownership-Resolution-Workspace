@@ -65,18 +65,44 @@ export default async function IssuePage({ params }: { params: Promise<{ sys_id: 
             </p>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
-            <div className="flex flex-col gap-4 rounded-lg bg-zinc-50 p-4 dark:bg-zinc-900 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">Proposed owner</p>
-                <p className="mt-1 text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
-                  {issue.recommendedOwner?.name ?? "Manual investigation required"}
-                </p>
-                <p className="mt-1 text-xs text-zinc-500">
-                  Current: {issue.currentSupportGroup?.name ?? issue.currentOwner ?? "Unassigned"}
+            {issue.recommendedChange ? (
+              <div className="rounded-lg bg-zinc-50 p-4 dark:bg-zinc-900">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">
+                      Proposed relationship change
+                    </p>
+                    <p className="mt-1 text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
+                      Remove self-reference
+                    </p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {issue.recommendedChange.relationshipType}:{" "}
+                      {issue.recommendedChange.parentCi.name} →{" "}
+                      {issue.recommendedChange.childCi.name}
+                    </p>
+                  </div>
+                  <ConfidenceBadge score={issue.aiConfidence} />
+                </div>
+                <p className="mt-4 rounded-md border border-zinc-200 px-3 py-2 text-xs leading-5 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+                  Scope: delete relationship{" "}
+                  <span className="font-mono">{issue.recommendedChange.relationshipSysId}</span>.
+                  The parent and child CIs remain unchanged.
                 </p>
               </div>
-              <ConfidenceBadge score={issue.aiConfidence} />
-            </div>
+            ) : (
+              <div className="flex flex-col gap-4 rounded-lg bg-zinc-50 p-4 dark:bg-zinc-900 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">Proposed owner</p>
+                  <p className="mt-1 text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
+                    {issue.recommendedOwner?.name ?? "Manual investigation required"}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Current: {issue.currentSupportGroup?.name ?? issue.currentOwner ?? "Unassigned"}
+                  </p>
+                </div>
+                <ConfidenceBadge score={issue.aiConfidence} />
+              </div>
+            )}
             <div>
               <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{issue.aiReason}</p>
               <p className="mt-2 text-sm leading-6 text-zinc-600 dark:text-zinc-400">{issue.aiRationale}</p>
