@@ -148,18 +148,14 @@ function parseGuardrailResults(value: unknown): GuardrailResult[] {
   }
   if (!Array.isArray(parsed)) return [];
 
-  return parsed.flatMap((item, index) => {
-    if (!item || typeof item !== "object") return [];
-    const record = item as Record<string, unknown>;
-    const rawStatus = String(record.status ?? "warn").toLowerCase();
-    const status: GuardrailStatus =
-      rawStatus === "pass" || rawStatus === "fail" ? rawStatus : "warn";
-    return [{
-      key: String(record.key ?? `check_${index + 1}`),
-      label: String(record.label ?? record.name ?? `Guardrail ${index + 1}`),
-      status,
-      detail: String(record.detail ?? record.message ?? "No detail supplied."),
-    }];
+  return parsed.map((g: unknown, i: number) => {
+    const item = g as { key?: string; check?: string; label?: string; result?: string; status?: string; note?: string; detail?: string };
+    return {
+      key: String(item.key ?? i),
+      label: item.check ?? item.label ?? `Guardrail ${i + 1}`,
+      status: (item.result ?? item.status ?? "warn") as GuardrailStatus,
+      detail: item.note ?? item.detail ?? "",
+    };
   });
 }
 
