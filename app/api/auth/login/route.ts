@@ -5,14 +5,20 @@ import { errorResponse } from "@/lib/api-helpers";
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const apiKey = body?.apiKey;
+  const viewerRequested = body?.viewer === true;
 
-  if (!apiKey || typeof apiKey !== "string") {
-    return errorResponse(400, "apiKey is required");
-  }
-
-  const role = resolveRoleForApiKey(apiKey);
-  if (!role) {
-    return errorResponse(401, "Invalid access key");
+  let role: "steward" | "viewer";
+  if (viewerRequested) {
+    role = "viewer";
+  } else {
+    if (!apiKey || typeof apiKey !== "string") {
+      return errorResponse(400, "Steward access key is required");
+    }
+    const resolvedRole = resolveRoleForApiKey(apiKey);
+    if (resolvedRole !== "steward") {
+      return errorResponse(401, "Invalid steward access key");
+    }
+    role = "steward";
   }
 
   const token = createSessionToken(role);

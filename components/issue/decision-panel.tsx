@@ -64,9 +64,13 @@ export function DecisionPanel({
   }
 
   return (
-    <Card>
+    <Card className="border-blue-200/70 shadow-lg shadow-blue-950/5 dark:border-blue-950 lg:sticky lg:top-24">
       <CardHeader>
-        <CardTitle>Decision Workspace</CardTitle>
+        <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-blue-500">Human approval required</p>
+        <CardTitle className="text-base">Decision workspace</CardTitle>
+        <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+          Your decision is written back to ServiceNow and retained in the task history.
+        </p>
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         {alreadyDecided ? (
@@ -95,11 +99,11 @@ export function DecisionPanel({
         ) : (
           <>
             <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-500">Decision Notes</label>
+              <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">Decision rationale</label>
               <Textarea
                 rows={3}
                 className="w-full"
-                placeholder="Capture rationale for this decision…"
+                placeholder="Explain why this recommendation should be accepted, overridden, or deferred…"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
               />

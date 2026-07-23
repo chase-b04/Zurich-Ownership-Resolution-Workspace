@@ -28,21 +28,24 @@ export default async function ActivityPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Activity History</h1>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Recommendations generated, decisions submitted, and CMDB changes.
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-500">Audit visibility</p>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">Activity history</h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          A chronological view of recommendations, steward decisions, and CMDB changes.
         </p>
       </div>
 
-      <Card className="divide-y divide-zinc-100 dark:divide-zinc-800">
+      <Card className="divide-y divide-slate-100 overflow-hidden dark:divide-slate-800">
         {entries.length === 0 && (
           <p className="p-6 text-center text-sm text-zinc-400">No activity recorded yet.</p>
         )}
         {entries.map((entry) => {
           const meta = TYPE_LABEL[entry.type];
           return (
-            <div key={entry.id} className="flex items-start justify-between gap-4 p-4">
-              <div className="flex flex-col gap-1">
+            <div key={entry.id} className="group flex items-start justify-between gap-4 p-5 transition-colors hover:bg-blue-50/40 dark:hover:bg-blue-950/10">
+              <div className="flex min-w-0 gap-3">
+                <span className="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full bg-blue-500 ring-4 ring-blue-500/10" />
+                <div className="flex min-w-0 flex-col gap-1">
                 <div className="flex items-center gap-2">
                   <Badge tone={meta.tone}>{meta.label}</Badge>
                   <Link
@@ -55,6 +58,7 @@ export default async function ActivityPage() {
                 </div>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">{entry.message}</p>
                 <p className="text-xs text-zinc-400">{entry.actor}</p>
+                </div>
               </div>
               <span className="shrink-0 text-xs text-zinc-400">
                 {formatActivityTimestamp(entry.timestamp)}

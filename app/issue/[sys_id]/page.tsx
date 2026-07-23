@@ -43,9 +43,10 @@ export default async function IssuePage({ params }: { params: Promise<{ sys_id: 
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <Link href="/" className="text-sm text-zinc-500 hover:underline">← Back to risk queue</Link>
-          <h1 className="mt-1 text-xl font-semibold text-zinc-900 dark:text-zinc-100">{issue.childCi.name}</h1>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+          <Link href="/" className="text-xs font-semibold text-blue-600 hover:text-blue-500">← Back to risk queue</Link>
+          <p className="mt-4 text-xs font-bold uppercase tracking-[0.18em] text-blue-500">Finding investigation</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">{issue.childCi.name}</h1>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             {issue.number} · {formatIssueType(issue.issueType)}
           </p>
         </div>
@@ -57,22 +58,22 @@ export default async function IssuePage({ params }: { params: Promise<{ sys_id: 
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)]">
-        <Card className="border-zinc-300 dark:border-zinc-700">
+        <Card className="border-blue-200/70 dark:border-blue-950">
           <CardHeader>
-            <CardTitle className="text-zinc-900 dark:text-zinc-100">Recommended remediation</CardTitle>
+            <CardTitle>Recommended remediation</CardTitle>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
               {issue.recommendationSource === "ai" ? "AI recommendation with deterministic validation" : "Deterministic fallback recommendation"}
             </p>
           </CardHeader>
           <CardContent className="flex flex-col gap-5">
             {issue.recommendedChange ? (
-              <div className="rounded-lg bg-zinc-50 p-4 dark:bg-zinc-900">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/60">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">
                       Proposed relationship change
                     </p>
-                    <p className="mt-1 text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
+                    <p className="mt-1 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
                       Remove self-reference
                     </p>
                     <p className="mt-1 text-xs text-zinc-500">
@@ -90,17 +91,26 @@ export default async function IssuePage({ params }: { params: Promise<{ sys_id: 
                 </p>
               </div>
             ) : (
-              <div className="flex flex-col gap-4 rounded-lg bg-zinc-50 p-4 dark:bg-zinc-900 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide text-zinc-400">Proposed owner</p>
-                  <p className="mt-1 text-2xl font-semibold text-zinc-900 dark:text-zinc-100">
-                    {issue.recommendedOwner?.name ?? "Manual investigation required"}
-                  </p>
-                  <p className="mt-1 text-xs text-zinc-500">
-                    Current: {issue.currentSupportGroup?.name ?? issue.currentOwner ?? "Unassigned"}
-                  </p>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-400">Ownership change</p>
+                  <ConfidenceBadge score={issue.aiConfidence} />
                 </div>
-                <ConfidenceBadge score={issue.aiConfidence} />
+                <div className="mt-4 grid items-stretch gap-3 sm:grid-cols-[1fr_auto_1fr]">
+                  <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950/70">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Current state</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                      {issue.currentSupportGroup?.name ?? issue.currentOwner ?? "Unassigned"}
+                    </p>
+                  </div>
+                  <span className="flex items-center justify-center text-lg text-blue-500" aria-hidden="true">→</span>
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-900 dark:bg-blue-950/35">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-blue-500">Proposed state</p>
+                    <p className="mt-2 text-sm font-semibold text-blue-900 dark:text-blue-100">
+                      {issue.recommendedOwner?.name ?? "Manual investigation required"}
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
             <div>
@@ -109,7 +119,10 @@ export default async function IssuePage({ params }: { params: Promise<{ sys_id: 
             </div>
           </CardContent>
         </Card>
-        <GuardrailPanel results={issue.guardrailResults} source={issue.recommendationSource} />
+        <div className="flex flex-col gap-6">
+          <GuardrailPanel results={issue.guardrailResults} source={issue.recommendationSource} />
+          <DecisionPanel issue={issue} groups={groups} role={role} />
+        </div>
       </div>
 
       <Card>
@@ -119,7 +132,7 @@ export default async function IssuePage({ params }: { params: Promise<{ sys_id: 
             <Field label="Issue Category" value={issue.issueCategory === "ownership" ? "Ownership" : "Relationship"} />
             <Field label="Issue Type" value={formatIssueType(issue.issueType)} />
             <Field label="Environment" value={issue.environment} />
-            <Field label="Team Scope" value={issue.teamIdentifier ?? "Not supplied"} />
+            <Field label="Risk Score" value={`${issue.severityScore} / 100`} />
             <Field label="CI Class" value={issue.childCi.ciClass} />
             <Field label="Managed By" value={issue.managedBy ?? "—"} />
             <Field label="Current Support Group" value={issue.currentSupportGroup?.name ?? "Unassigned"} />
@@ -148,8 +161,6 @@ export default async function IssuePage({ params }: { params: Promise<{ sys_id: 
           )}
         </CardContent>
       </Card>
-
-      <DecisionPanel issue={issue} groups={groups} role={role} />
     </div>
   );
 }

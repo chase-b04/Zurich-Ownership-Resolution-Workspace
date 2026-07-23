@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -14,6 +14,7 @@ import {
   YAxis,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ErrorCard } from "@/components/error-card";
 import { AnalyticsData } from "@/lib/types";
 
 const CONFIDENCE_COLORS: Record<string, string> = {
@@ -40,23 +41,76 @@ const CHART_COLORS = [
 
 export function AnalyticsClient() {
   const [data, setData] = useState<AnalyticsData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/analytics")
-      .then((res) => res.json())
+      .then(async (res) => {
+        const body = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(body?.error?.message ?? "Analytics could not be loaded");
+        }
+        return body;
+      })
       .then(setData)
-      .catch(() => setData(null));
+      .catch((error) => {
+        setLoadError(error instanceof Error ? error.message : "Analytics could not be loaded");
+      });
   }, []);
 
-  if (!data) {
-    return <p className="text-sm text-zinc-400">Loading analytics…</p>;
+  const insights = useMemo(() => {
+    if (!data) return null;
+    const total = data.byClass.reduce((sum, item) => sum + item.count, 0);
+    const topClass = [...data.byClass].sort((a, b) => b.count - a.count)[0];
+    const high = data.byConfidence.find((item) => item.level === "high")?.count ?? 0;
+    const topTeam = [...data.byTeam].sort((a, b) => b.count - a.count)[0];
+    return {
+      topClass,
+      highPct: total ? Math.round((high / total) * 100) : 0,
+      topTeam,
+    };
+  }, [data]);
+
+  if (loadError) {
+    return <ErrorCard title="Analytics unavailable" message={loadError} />;
+  }
+
+  if (!data || !insights) {
+    return (
+      <div className="grid animate-pulse gap-4 sm:grid-cols-3">
+        {[0, 1, 2].map((item) => (
+          <div key={item} className="h-24 rounded-xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-900" />
+        ))}
+        <div className="h-80 rounded-xl border border-slate-200 bg-slate-100 sm:col-span-3 dark:border-slate-800 dark:bg-slate-900" />
+      </div>
+    );
   }
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-3 lg:col-span-2">
+        <Card className="p-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-500">Primary concentration</p>
+          <p className="mt-2 text-lg font-bold text-slate-950 dark:text-white">
+            {insights.topClass?.ciClass ?? "No class data"}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">{insights.topClass?.count ?? 0} findings in the largest CI class</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-500">Decision readiness</p>
+          <p className="mt-2 text-lg font-bold text-slate-950 dark:text-white">{insights.highPct}% high confidence</p>
+          <p className="mt-1 text-xs text-slate-500">Recommendations with the strongest review signal</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-500">Most recommended</p>
+          <p className="mt-2 truncate text-lg font-bold text-slate-950 dark:text-white">{insights.topTeam?.team ?? "No team data"}</p>
+          <p className="mt-1 text-xs text-slate-500">{insights.topTeam?.count ?? 0} recommendations</p>
+        </Card>
+      </div>
       <Card>
         <CardHeader>
-          <CardTitle>Ownership Issues by CI Class</CardTitle>
+          <CardTitle>Ownership findings by CI class</CardTitle>
+          <p className="text-xs text-slate-500">Where the current remediation burden is concentrated.</p>
         </CardHeader>
         <CardContent className="h-72">
           <ResponsiveContainer width="100%" height="100%">
@@ -80,7 +134,8 @@ export function AnalyticsClient() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Recommendation Confidence</CardTitle>
+          <CardTitle>Recommendation confidence</CardTitle>
+          <p className="text-xs text-slate-500">How much evidence supports the proposed action.</p>
         </CardHeader>
         <CardContent className="flex h-72 flex-col">
           <div className="min-h-0 flex-1">
@@ -125,7 +180,8 @@ export function AnalyticsClient() {
 
       <Card className="lg:col-span-2">
         <CardHeader>
-          <CardTitle>Recommendation Distribution by Team</CardTitle>
+          <CardTitle>Recommendation distribution by team</CardTitle>
+          <p className="text-xs text-slate-500">Teams receiving the largest share of proposed ownership.</p>
         </CardHeader>
         <CardContent className="h-72">
           <ResponsiveContainer width="100%" height="100%">

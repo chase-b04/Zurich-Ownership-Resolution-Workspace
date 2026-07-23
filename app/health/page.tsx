@@ -22,8 +22,9 @@ export default async function HealthPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">CMDB Health</h1>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-500">Operational posture</p>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">CMDB backlog health</h1>
+        <p className="mt-1 max-w-4xl text-sm text-slate-500 dark:text-slate-400">
           Backlog health for CIs currently flagged by ownership detection — not a measure of
           coverage across the entire CMDB. ServiceNow remains the system of record for total CI
           inventory.

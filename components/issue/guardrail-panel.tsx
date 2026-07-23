@@ -26,7 +26,7 @@ export function GuardrailPanel({ results, source }: { results: GuardrailResult[]
       <CardContent className="flex flex-col gap-3">
         {source === "deterministic_fallback" && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
-            AI validation did not complete successfully. This recommendation was produced by the deterministic fallback.
+            This recommendation was produced by deterministic rules and remains subject to human approval.
           </div>
         )}
         <ul className="flex flex-col gap-2">

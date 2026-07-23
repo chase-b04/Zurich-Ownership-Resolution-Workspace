@@ -31,6 +31,12 @@ const SEVERITY_ORDER: Record<SeverityBand, number> = {
   Medium: 2,
   Low: 1,
 };
+const SEVERITY_RAIL: Record<SeverityBand, string> = {
+  Critical: "border-l-rose-500",
+  High: "border-l-amber-500",
+  Medium: "border-l-blue-500",
+  Low: "border-l-slate-500",
+};
 
 async function readJson<T>(res: Response): Promise<T> {
   const body = await res.json().catch(() => null);
@@ -137,6 +143,25 @@ export function DashboardClient({
     () => Array.from(new Set(groups.map((group) => group.name))).sort(),
     [groups]
   );
+  const activeFilterCount = [
+    status,
+    confidence,
+    severity,
+    category,
+    ciClass,
+    supportGroup,
+    search.trim(),
+  ].filter(Boolean).length;
+
+  function clearFilters() {
+    setStatus("");
+    setConfidence("");
+    setSeverity("");
+    setCategory("");
+    setCiClass("");
+    setSupportGroup("");
+    setSearch("");
+  }
 
   const riskSummary = useMemo(() => {
     const open = (issues ?? []).filter(
@@ -200,8 +225,12 @@ export function DashboardClient({
         />
       </div>
 
-      <Card className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
+      <Card className="flex flex-col gap-4 border-blue-200/70 bg-blue-50/50 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-blue-950 dark:bg-blue-950/15">
+        <div className="flex items-start gap-3">
+          <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" aria-hidden="true">
+            ↻
+          </span>
+          <div>
           <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
             {detectionAvailable ? "Run risk detection" : "Refresh risk findings"}
           </p>
@@ -210,6 +239,7 @@ export function DashboardClient({
               ? "Scan current CI and relationship records and add newly derived issues to the queue."
               : "Reload findings already produced by ServiceNow. Detection is not installed on this API."}
           </p>
+          </div>
         </div>
         <Button
           onClick={handleRunDetection}
@@ -257,12 +287,25 @@ export function DashboardClient({
       )}
 
       <Card className="p-4">
-        <div className="mb-3 flex items-center justify-between gap-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Risk queue</p>
-            <p className="text-xs text-zinc-500">Worst-first across severity, environment, and confidence.</p>
+            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Queue controls</p>
+            <p className="text-xs text-slate-500">Narrow the queue without changing the risk-first ordering.</p>
           </div>
-          <p className="text-xs tabular-nums text-zinc-500">{visibleIssues.length} findings</p>
+          <div className="flex items-center gap-3">
+            {activeFilterCount > 0 && (
+              <button
+                type="button"
+                onClick={clearFilters}
+                className="text-xs font-semibold text-blue-600 hover:text-blue-500"
+              >
+                Clear {activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"}
+              </button>
+            )}
+            <p className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+              {visibleIssues.length} findings
+            </p>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Input
@@ -308,8 +351,15 @@ export function DashboardClient({
       </Card>
 
       <Card className="overflow-x-auto">
-        <table className="w-full min-w-[1080px] text-left text-sm">
-          <thead className="border-b border-zinc-200 bg-zinc-50 text-xs uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
+        <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <div>
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-white">Prioritized findings</h2>
+            <p className="mt-0.5 text-xs text-slate-500">Critical and production-impacting records appear first.</p>
+          </div>
+          <span className="text-xs text-slate-400">Select a CI to investigate</span>
+        </div>
+        <table className="w-full min-w-[1180px] text-left text-sm">
+          <thead className="border-b border-slate-200 bg-slate-50/80 text-[11px] uppercase tracking-[0.08em] text-slate-500 dark:border-slate-800 dark:bg-slate-900/70 dark:text-slate-400">
             <tr>
               <th className="px-4 py-3">Severity</th>
               <th className="px-4 py-3">Finding</th>
@@ -319,17 +369,36 @@ export function DashboardClient({
               <th className="px-4 py-3">Guardrails</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Found</th>
+              <th className="px-4 py-3 text-right">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
             {issues === null && (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-zinc-400">Loading risk queue…</td></tr>
+              <>
+                {[0, 1, 2, 3].map((row) => (
+                  <tr key={row} className="animate-pulse">
+                    <td colSpan={9} className="px-4 py-3">
+                      <div className="h-10 rounded-lg bg-slate-100 dark:bg-slate-900" />
+                    </td>
+                  </tr>
+                ))}
+              </>
             )}
             {issues !== null && visibleIssues.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-zinc-400">No findings match the current filters.</td></tr>
+              <tr>
+                <td colSpan={9} className="px-4 py-14 text-center">
+                  <p className="font-semibold text-slate-700 dark:text-slate-200">No findings match these filters</p>
+                  <button type="button" onClick={clearFilters} className="mt-2 text-xs font-semibold text-blue-600">
+                    Clear filters and show the full queue
+                  </button>
+                </td>
+              </tr>
             )}
             {visibleIssues.map((issue) => (
-              <tr key={issue.sys_id} className="hover:bg-zinc-50 dark:hover:bg-zinc-900">
+              <tr
+                key={issue.sys_id}
+                className={`border-l-[3px] ${SEVERITY_RAIL[issue.severityBand]} transition-colors hover:bg-blue-50/40 dark:hover:bg-blue-950/10`}
+              >
                 <td className="px-4 py-3"><SeverityBadge band={issue.severityBand} score={issue.severityScore} /></td>
                 <td className="px-4 py-3">
                   <Link href={`/issue/${issue.sys_id}`} className="font-medium text-zinc-900 hover:underline dark:text-zinc-100">
@@ -359,6 +428,14 @@ export function DashboardClient({
                 <td className="px-4 py-3"><GuardrailBadge status={issue.guardrailStatus} /></td>
                 <td className="px-4 py-3"><ReviewStatusBadge status={issue.reviewStatus} /></td>
                 <td className="px-4 py-3 text-zinc-500">{formatDate(issue.dateIdentified)}</td>
+                <td className="px-4 py-3 text-right">
+                  <Link
+                    href={`/issue/${issue.sys_id}`}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-500"
+                  >
+                    Review <span aria-hidden="true">→</span>
+                  </Link>
+                </td>
               </tr>
             ))}
           </tbody>

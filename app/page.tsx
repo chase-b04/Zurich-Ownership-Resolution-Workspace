@@ -11,9 +11,12 @@ export default async function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100">Dashboard</h1>
-        <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          Prioritize CMDB remediation by operational risk, then review the evidence and safeguards.
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-blue-500">Risk operations</p>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-950 dark:text-white">
+          Remediation queue
+        </h1>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          Triage the highest operational risk first, then validate evidence and safeguards.
         </p>
       </div>
       <DashboardClient

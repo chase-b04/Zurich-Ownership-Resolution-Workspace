@@ -45,7 +45,7 @@ issue list on every request.
 ## Auth
 
 Demo-tier auth per planning.md's "Simple API Key Authentication": set
-`STEWARD_API_KEY`, `VIEWER_API_KEY`, and `SESSION_SECRET` in `.env.local`
+`STEWARD_API_KEY` and `SESSION_SECRET` in `.env.local`
 (defaults are already filled in for local dev — change them before sharing
 the app). Signing in with either key exchanges it for a signed, httpOnly
 session cookie; `proxy.ts` gates every route behind having a valid session,
@@ -55,7 +55,7 @@ unauthenticated API calls.
 Two roles, matching the Authorization Model in planning.md:
 
 - **Steward** — full access, can accept/override/defer recommendations.
-- **Viewer** — read-only; the decision UI is hidden and
+- **Viewer** — keyless, read-only access; the decision UI is hidden and
   `PATCH /api/issues/{id}/decision` returns `403` even if called directly.
 
 Swapping to Microsoft Entra ID for production only means replacing

@@ -1,21 +1,11 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 import { Nav } from "@/components/nav";
 import { MockDataBanner } from "@/components/mock-data-banner";
 import { SystemFooter } from "@/components/system-footer";
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/auth/session";
+import { isUsingMockData } from "@/lib/servicenow/client";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "Ownership Resolution Workspace",
@@ -32,14 +22,13 @@ export default async function RootLayout({
   const role = token ? verifySessionToken(token) : null;
 
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col bg-zinc-50 dark:bg-zinc-900">
-        <Nav role={role} />
+    <html lang="en" className="h-full antialiased">
+      <body className="app-shell min-h-full flex flex-col">
+        <Nav role={role} connected={!isUsingMockData()} />
         <MockDataBanner />
-        <main className="mx-auto w-full max-w-7xl flex-1 px-6 py-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1480px] flex-1 px-4 py-7 sm:px-6 lg:px-8 lg:py-9">
+          {children}
+        </main>
         <SystemFooter />
       </body>
     </html>
