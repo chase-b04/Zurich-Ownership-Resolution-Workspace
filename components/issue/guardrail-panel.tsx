@@ -37,7 +37,9 @@ export function GuardrailPanel({ results, source }: { results: GuardrailResult[]
               </span>
               <div className="min-w-0">
                 <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{result.label}</p>
-                <p className="mt-0.5 text-xs leading-5 text-zinc-500 dark:text-zinc-400">{result.detail}</p>
+                {result.detail && (
+                  <p className="mt-0.5 text-xs leading-5 text-zinc-500 dark:text-zinc-400">{result.detail}</p>
+                )}
               </div>
             </li>
           ))}
